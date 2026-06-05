@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Attribute-Based Access Control (ABAC) in Keycloak: Comprehensive Guidebook</title>
+    <meta name="description" content="A detailed, interactive guidebook on Attribute-Based Access Control (ABAC) in Keycloak, featuring architecture, implementation strategies, an interactive policy simulator, and a hands-on lab.">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="brand-section">
+                <div class="brand-logo">KC</div>
+                <div class="brand-title">ABAC Guide</div>
+            </div>
+            <ul class="nav-menu">
+                <li class="nav-item"><a href="#intro" class="nav-link active" id="nav-intro">1. What is ABAC?</a></li>
+                <li class="nav-item"><a href="#keycloak-authz" class="nav-link" id="nav-keycloakz">2. Keycloak AuthZ</a></li>
+                <li class="nav-item"><a href="#abac-impl" class="nav-link" id="nav-abac-impl">3. Implementing ABAC</a></li>
+                <li class="nav-item"><a href="#simulator" class="nav-link" id="nav-simulator">4. Live ABAC Simulator</a></li>
+                <li class="nav-item"><a href="#hands-on-lab" class="nav-link" id="nav-lab">5. Hands-on Lab</a></li>
+            </ul>
+        </nav>
+
+        <!-- Main Content Panel -->
+        <main class="main-content">
+            <header>
+                <h1>Attribute-Based Access Control (ABAC) in Keycloak</h1>
+                <p class="text-secondary">Learn how to build fine-grained, dynamic, and context-aware security policies using user, resource, and environment attributes in Keycloak.</p>
+            </header>
+
+            <!-- Section 1: Introduction to ABAC -->
+            <section id="intro">
+                <h2>1. Introduction to ABAC vs RBAC</h2>
+                <p>Access control is the cornerstone of modern security architecture. Traditionally, <strong>Role-Based Access Control (RBAC)</strong> has been the standard. However, as business requirements grow in complexity, RBAC's limitations become evident, giving rise to <strong>Attribute-Based Access Control (ABAC)</strong>.</p>
+                
+                <div class="grid-2">
+                    <div class="feature-card">
+                        <div class="card-icon">R</div>
+                        <h3>Role-Based Access Control (RBAC)</h3>
+                        <p>Grants permissions based on pre-defined roles (e.g., <code>Admin</code>, <code>Manager</code>, <code>Employee</code>). While simple to start, it leads to <strong>"Role Explosion"</strong> when you need parameters like <code>US-Sales-Manager</code>, <code>EU-HR-Manager</code>, etc.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="card-icon">A</div>
+                        <h3>Attribute-Based Access Control (ABAC)</h3>
+                        <p>Grants permissions based on a combination of <strong>Subject</strong>, <strong>Resource</strong>, and <strong>Environment</strong> attributes. Extremely flexible, allowing complex rules (e.g., "HR Managers can view records from the US during office hours").</p>
+                    </div>
+                </div>
+
+                <h3>The ABAC Architecture (XACML Reference Model)</h3>
+                <p>Standard ABAC systems follow the XACML framework, which defines specific functional entities to separate policy definition, evaluation, and enforcement:</p>
+
+                <div class="mermaid">
+                    graph LR
+                        subgraph PEP [PEP: Policy Enforcement Point]
+                            App[Your Application]
+                        end
+                        subgraph Keycloak [PDP: Policy Decision Point]
+                            KC[Keycloak AuthZ Engine]
+                        end
+                        subgraph PIP [PIP: Policy Information Point]
+                            DB[(User Attributes / DB)]
+                        end
+                        subgraph PAP [PAP: Policy Administration Point]
+                            Console[Keycloak Admin Console]
+                        end
+                        
+                        App -->|1. Request Access| KC
+                        KC -->|2. Fetch Attributes| DB
+                        DB -->|3. Return Attributes| KC
+                        Console -->|Configure Policies| KC
+                        KC -->|4. Permit / Deny| App
+                </div>
+
+                <div class="highlight-box tip">
+                    <strong>Note:</strong> In this setup, <strong>Keycloak</strong> acts as both the <strong>PDP</strong> (evaluating decisions) and the <strong>PAP</strong> (where you manage policies). Your client application acts as the <strong>PEP</strong>, sending tokens and intercepting traffic to enforce the decision.
+                </div>
+            </section>
+
+            <!-- Section 2: Keycloak Authorization Services -->
+            <section id="keycloak-authz">
+                <h2>2. Keycloak Authorization Services</h2>
+                <p>Keycloak supports fine-grained authorization policies under its <strong>Authorization Services</strong>. This is distinct from simple client scopes and role claims. It allows you to build a true centralized PDP.</p>
+                
+                <h3>Key Components:</h3>
+                <ul>
+                    <li><strong>Resource Servers:</strong> The application client representing the API or service you want to protect.</li>
+                    <li><strong>Resources:</strong> The assets being protected (e.g., specific URLs, documents, files, or generic APIs) which can have their own custom attributes.</li>
+                    <li><strong>Authorization Scopes:</strong> The actions allowed on resources (e.g., <code>read</code>, <code>write</code>, <code>delete</code>).</li>
+                    <li><strong>Policies:</strong> The conditions that must be met to grant access (e.g., JavaScript scripts, time rules, role requirements).</li>
+                    <li><strong>Permissions:</strong> The binding elements that tie together Resources, Scopes, and Policies.</li>
+                </ul>
+
+                <div class="mermaid">
+                    graph TD
+                        Permission[Permission] --> Resource[Resource: /documents/*]
+                        Permission --> Scope[Scope: write]
+                        Permission --> Policy[Policy: Match Department JS]
+                </div>
+            </section>
+
+            <!-- Section 3: Implementing ABAC in Keycloak -->
+            <section id="abac-impl">
+                <h2>3. Implementing ABAC</h2>
+                <p>To implement ABAC in Keycloak, attributes must be populated across three logical layers:</p>
+                
+                <ol>
+                    <li><strong>Subject (User) Attributes:</strong> Defined in Keycloak on the User profiles (e.g., <code>department</code>, <code>clearance_level</code>).</li>
+                    <li><strong>Resource Attributes:</strong> Defined inside Keycloak Authorization tab under Resources (e.g., <code>department = HR</code>, <code>classification = Level 3</code>).</li>
+                    <li><strong>Context/Environment Attributes:</strong> Provided at runtime within the evaluation context (e.g., Client Network IP, Current Time).</li>
+                </ol>
+
+                <h3>JavaScript Policies: Keycloak's Dynamic Engine</h3>
+                <p>To write true attribute matching rules in Keycloak, you use <strong>JavaScript Policies</strong>. These run directly on the Keycloak JVM server. Here is how Keycloak parses the attributes at runtime:</p>
+
+                <div class="code-container">
+                    <div class="code-header">
+                        <span class="code-title">keycloak-attributes-retrieval.js</span>
+                    </div>
+                    <pre><code>// Fetch the context
+var context = $evaluation.getContext();
+// Subject attributes
+var userAttrs = context.getIdentity().getAttributes();
+var userDept = userAttrs.getValue('department').asString();
+
+// Resource attributes
+var resourceAttrs = $evaluation.getPermission().getResource().getAttributes();
+var resourceDept = resourceAttrs.getValue('department').asString();
+
+// Perform comparison
+if (userDept === resourceDept) {
+    $evaluation.grant();
+}</code></pre>
+                </div>
+            </section>
+
+            <!-- Section 4: Live ABAC Simulator -->
+            <section id="simulator">
+                <h2>4. Live Interactive ABAC Simulator</h2>
+                <p>Explore how Keycloak evaluates access dynamically. Adjust the Subject, Resource, and Environment attributes below, select which policy rules are active, and see the real-time sequence flow and decision outcome.</p>
+
+                <div class="simulator-layout">
+                    <!-- Control Panel (Left) -->
+                    <div class="sim-controls">
+                        <!-- Subject Attributes -->
+                        <div>
+                            <div class="sim-section-title">Subject (User) Attributes</div>
+                            <div class="sim-group" style="margin-bottom: 0.75rem;">
+                                <label for="sub-role">Role</label>
+                                <select id="sub-role" class="sim-select">
+                                    <option value="employee">Employee</option>
+                                    <option value="manager">Manager</option>
+                                </select>
+                            </div>
+                            <div class="sim-group" style="margin-bottom: 0.75rem;">
+                                <label for="sub-dept">Department</label>
+                                <select id="sub-dept" class="sim-select">
+                                    <option value="hr">HR</option>
+                                    <option value="eng">Engineering</option>
+                                    <option value="finance">Finance</option>
+                                </select>
+                            </div>
+                            <div class="sim-group">
+                                <label for="sub-clearance">Clearance Level</label>
+                                <select id="sub-clearance" class="sim-select">
+                                    <option value="1">L1 (Standard)</option>
+                                    <option value="2" selected>L2 (Confidential)</option>
+                                    <option value="3">L3 (Highly Confidential)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Resource Attributes -->
+                        <div>
+                            <div class="sim-section-title">Resource Attributes</div>
+                            <div class="sim-group" style="margin-bottom: 0.75rem;">
+                                <label for="res-type">Type</label>
+                                <select id="res-type" class="sim-select">
+                                    <option value="document">Document</option>
+                                    <option value="server">Server</option>
+                                </select>
+                            </div>
+                            <div class="sim-group" style="margin-bottom: 0.75rem;">
+                                <label for="res-dept">Owner Department</label>
+                                <select id="res-dept" class="sim-select">
+                                    <option value="hr">HR</option>
+                                    <option value="eng">Engineering</option>
+                                    <option value="finance">Finance</option>
+                                </select>
+                            </div>
+                            <div class="sim-group">
+                                <label for="res-classification">Required Classification</label>
+                                <select id="res-classification" class="sim-select">
+                                    <option value="1">L1 (Public)</option>
+                                    <option value="2" selected>L2 (Confidential)</option>
+                                    <option value="3">L3 (Secret)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Environment Attributes -->
+                        <div>
+                            <div class="sim-section-title">Environment Context</div>
+                            <div class="sim-group" style="margin-bottom: 0.75rem;">
+                                <label for="env-network">Network Location</label>
+                                <select id="env-network" class="sim-select">
+                                    <option value="office">Office Network (Secure)</option>
+                                    <option value="public">Public Internet (Insecure)</option>
+                                </select>
+                            </div>
+                            <div class="sim-group">
+                                <label for="env-time">Time of Access</label>
+                                <select id="env-time" class="sim-select">
+                                    <option value="working">Standard Working Hours</option>
+                                    <option value="offhours">Off-hours / Weekend</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Rule Selector -->
+                        <div>
+                            <div class="sim-section-title">Active Policy Rules</div>
+                            <div class="rule-toggle-list">
+                                <div class="rule-toggle-item">
+                                    <span>Dept Match Rule</span>
+                                    <label class="switch">
+                                        <input type="checkbox" id="rule-dept" checked>
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+                                <div class="rule-toggle-item">
+                                    <span>Clearance Check</span>
+                                    <label class="switch">
+                                        <input type="checkbox" id="rule-clearance" checked>
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+                                <div class="rule-toggle-item">
+                                    <span>L3 Office Network</span>
+                                    <label class="switch">
+                                        <input type="checkbox" id="rule-network" checked>
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+                                <div class="rule-toggle-item">
+                                    <span>Off-hours Manager</span>
+                                    <label class="switch">
+                                        <input type="checkbox" id="rule-time" checked>
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button id="btn-evaluate" class="btn-primary">Re-Run Animation</button>
+                    </div>
+
+                    <!-- Visual Canvas & Live Log (Right) -->
+                    <div class="sim-canvas">
+                        <!-- SVG Animation Container -->
+                        <div class="svg-container">
+                            <svg viewBox="0 0 560 300">
+                                <defs>
+                                    <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                                        <path d="M 0 0 L 10 5 L 0 10 z" fill="#374151" />
+                                    </marker>
+                                    <marker id="arrow-active" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                                        <path d="M 0 0 L 10 5 L 0 10 z" fill="#6366f1" />
+                                    </marker>
+                                    <marker id="arrow-success" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                                        <path d="M 0 0 L 10 5 L 0 10 z" fill="#10b981" />
+                                    </marker>
+                                    <marker id="arrow-fail" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                                        <path d="M 0 0 L 10 5 L 0 10 z" fill="#ef4444" />
+                                    </marker>
+                                </defs>
+
+                                <!-- Node Connections -->
+                                <!-- PEP -> PDP -->
+                                <path id="path-pep-pdp" d="M 120 110 L 230 110" fill="none" class="flow-path" marker-end="url(#arrow-active)" />
+                                <!-- PDP -> PEP -->
+                                <path id="path-pdp-pep" d="M 230 130 L 120 130" fill="none" class="flow-path" marker-end="url(#arrow-active)" />
+
+                                <!-- PDP -> PIP -->
+                                <path id="path-pdp-pip" d="M 270 165 L 270 205" fill="none" class="flow-path" marker-end="url(#arrow-active)" />
+                                <!-- PIP -> PDP -->
+                                <path id="path-pip-pdp" d="M 290 205 L 290 165" fill="none" class="flow-path" marker-end="url(#arrow-active)" />
+
+                                <!-- PDP -> PAP -->
+                                <path id="path-pdp-pap" d="M 325 110 L 435 110" fill="none" class="flow-path" marker-end="url(#arrow-active)" />
+                                <!-- PAP -> PDP -->
+                                <path id="path-pap-pdp" d="M 435 130 L 325 130" fill="none" class="flow-path" marker-end="url(#arrow-active)" />
+
+                                <!-- Node PEP -->
+                                <g id="node-pep">
+                                    <circle cx="80" cy="120" r="38" class="node-circle" />
+                                    <text x="80" y="118" class="node-text">PEP</text>
+                                    <text x="80" y="132" class="node-subtext">(App / Client)</text>
+                                </g>
+
+                                <!-- Node PDP -->
+                                <g id="node-pdp">
+                                    <circle cx="280" cy="120" r="43" class="node-circle" />
+                                    <text x="280" y="118" class="node-text">PDP</text>
+                                    <text x="280" y="132" class="node-subtext">(Keycloak Engine)</text>
+                                </g>
+
+                                <!-- Node PAP -->
+                                <g id="node-pap">
+                                    <circle cx="480" cy="120" r="38" class="node-circle" />
+                                    <text x="480" y="118" class="node-text">PAP</text>
+                                    <text x="480" y="132" class="node-subtext">(Admin Policies)</text>
+                                </g>
+
+                                <!-- Node PIP -->
+                                <g id="node-pip">
+                                    <circle cx="280" cy="245" r="38" class="node-circle" />
+                                    <text x="280" y="243" class="node-text">PIP</text>
+                                    <text x="280" y="257" class="node-subtext">(User / Resource DB)</text>
+                                </g>
+                            </svg>
+                        </div>
+
+                        <!-- Decision Panel -->
+                        <div class="decision-panel">
+                            <!-- Output Decision Card -->
+                            <div id="decision-card" class="decision-box grant">
+                                <h4>Decision</h4>
+                                <span id="decision-text" class="decision-status">GRANT</span>
+                                <p id="decision-desc">All attributes matched.</p>
+                            </div>
+
+                            <!-- Rule checklist breakdown -->
+                            <div class="rule-check-panel">
+                                <div class="rule-check-row">
+                                    <span class="rule-name">Department Matching:</span>
+                                    <span id="badge-dept" class="rule-badge passed">PASSED</span>
+                                </div>
+                                <div class="rule-check-row">
+                                    <span class="rule-name">Clearance Level Suitability:</span>
+                                    <span id="badge-clearance" class="rule-badge passed">PASSED</span>
+                                </div>
+                                <div class="rule-check-row">
+                                    <span class="rule-name">Level-3 Environment Security:</span>
+                                    <span id="badge-network" class="rule-badge passed">PASSED</span>
+                                </div>
+                                <div class="rule-check-row">
+                                    <span class="rule-name">Off-hours Manager Exception:</span>
+                                    <span id="badge-time" class="rule-badge passed">PASSED</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Simulated console logs -->
+                        <div class="console-panel">
+                            <div class="console-header">
+                                <span>PDP ENGINE EVALUATION CONSOLE</span>
+                                <span>LOG_LEVEL: DEBUG</span>
+                            </div>
+                            <div id="simulator-console" class="console-body">
+                                <!-- Dynamically loaded logs -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 5: Hands-on Lab -->
+            <section id="hands-on-lab">
+                <h2>5. Hands-on Lab: Configure Keycloak ABAC</h2>
+                <p>Follow this detailed lab to set up a working Keycloak instance, configure ABAC parameters, and deploy a policy that matches user clearance to resource requirements.</p>
+
+                <h3>Prerequisites</h3>
+                <p>You need <a href="https://docs.docker.com/get-docker/" target="_blank">Docker</a> and <a href="https://docs.docker.com/compose/" target="_blank">Docker Compose</a> installed on your machine.</p>
+
+                <h3>Step 1: Start a Standard Keycloak 26 Instance</h3>
+                <p>To configure authorization rules entirely from the browser console, we do not need custom JavaScript scripts or custom providers. We can use standard Keycloak features (Roles and native Role Policies). Therefore, we can run a standard Keycloak container directly.</p>
+                <p>Review the [docker-compose.yml](file:///home/wasuthep/Playground/keyclock_tuts/lab-code/docker-compose.yml) provided in the lab directory:</p>
+
+                <div class="code-container">
+                    <div class="code-header">
+                        <span class="code-title">lab-code/docker-compose.yml</span>
+                        <button class="btn-copy" onclick="navigator.clipboard.writeText(document.getElementById('compose-code').textContent); this.textContent='Copied!'; setTimeout(() => this.textContent='Copy', 1500)">Copy</button>
+                    </div>
+                    <pre><code id="compose-code">version: '3.8'
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.6.2
+    container_name: keycloak_abac_lab
+    environment:
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+    ports:
+      - "8080:8080"
+    command: start-dev</code></pre>
+                </div>
+
+                <p>Start the container by running this in your terminal:</p>
+                <div class="code-container">
+                    <pre><code>docker-compose up -d</code></pre>
+                </div>
+
+                <div class="highlight-box warning">
+                    <strong>Warning on In-Memory Storage:</strong> Keycloak runs on an in-memory H2 database by default. If you stop the service using <code>docker compose down</code>, your realm, user attributes, and policy mappings will be deleted. To pause the container without losing your progress, run <code>docker compose stop</code> instead. If you have run <code>down</code>, you will need to re-create the realm, client, users, and resources in the Keycloak Admin Console.
+                </div>
+
+                <h3>Step 2: Access the Admin Console and Configure Client</h3>
+                <ol>
+                    <li>Open browser to <a href="http://localhost:8080" target="_blank">http://localhost:8080</a> and log in with admin/admin.</li>
+                    <li>Create a Realm named <code>abac-realm</code>.</li>
+                    <li>Navigate to <strong>Clients</strong> and create a Client:
+                        <ul>
+                            <li>Client ID: <code>document-service-api</code></li>
+                            <li>In the <strong>Capability config</strong> section, configure:
+                                <ul>
+                                    <li>Client authentication: <strong>ON</strong> (Confidential client)</li>
+                                    <li>Authorization: <strong>ON</strong> (Enables Authorization Services)</li>
+                                    <li>Direct access grants: <strong>ON</strong> (Required for resource owner password credentials flow)</li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </li>
+                    <li>Click <strong>Save</strong>. You will now see an <strong>Authorization</strong> tab on the client details page.</li>
+                </ol>
+
+                <h3>Step 3: Setup Realm Roles</h3>
+                <p>Instead of custom JavaScript code to inspect user attributes, we can use Keycloak's native **Realm Roles** to represent attributes, which allows configuring policy constraints entirely via the browser UI.</p>
+                <ol>
+                    <li>In the left sidebar, navigate to <strong>Realm roles</strong> and click <strong>Create role</strong>.</li>
+                    <li>Create the role representing the HR department:
+                        <ul>
+                            <li>Role name: <code>dept-hr</code></li>
+                        </ul>
+                    </li>
+                    <li>Click <strong>Save</strong>.</li>
+                    <li>Go back to **Realm roles** and click **Create role** again:
+                        <ul>
+                            <li>Role name: <code>clearance-3</code> (represents Clearance Level 3)</li>
+                        </ul>
+                    </li>
+                    <li>Click <strong>Save</strong>.</li>
+                </ol>
+
+                <h3>Step 4: Create Users and Assign Roles</h3>
+                <p>Create two users to test access permissions. Due to Keycloak 26's default **User Profile** policies, basic fields must be fully completed to allow API logins without encountering "Account is not fully set up" errors.</p>
+                <ol>
+                    <li>Create user: <strong>alice</strong>
+                        <ul>
+                            <li><strong>Username:</strong> <code>alice</code></li>
+                            <li><strong>Email:</strong> <code>alice@example.com</code></li>
+                            <li><strong>First Name:</strong> <code>Alice</code></li>
+                            <li><strong>Last Name:</strong> <code>Smith</code></li>
+                            <li><strong>Email verified:</strong> Toggle **ON**</li>
+                            <li><strong>Required user actions:</strong> Ensure this field is **empty**</li>
+                            <li>Click **Save**.</li>
+                            <li>Go to the **Role mapping** tab:
+                                <ul>
+                                    <li>Click **Assign role**.</li>
+                                    <li>Select both <code>dept-hr</code> and <code>clearance-3</code>.</li>
+                                    <li>Click **Assign**.</li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </li>
+                    <li>Create user: <strong>bob</strong>
+                        <ul>
+                            <li><strong>Username:</strong> <code>bob</code></li>
+                            <li><strong>Email:</strong> <code>bob@example.com</code></li>
+                            <li><strong>First Name:</strong> <code>Bob</code></li>
+                            <li><strong>Last Name:</strong> <code>Jones</code></li>
+                            <li><strong>Email verified:</strong> Toggle **ON**</li>
+                            <li><strong>Required user actions:</strong> Ensure this field is **empty**</li>
+                            <li>Click **Save**.</li>
+                            <li>Bob has no department role and standard clearance, so do **not** assign the <code>dept-hr</code> or <code>clearance-3</code> roles.</li>
+                        </ul>
+                    </li>
+                    <li>Set password credentials for both users:
+                        <ul>
+                            <li>Go to the **Credentials** tab for each user.</li>
+                            <li>Click **Set password** (or Reset password).</li>
+                            <li>Password: <code>password</code></li>
+                            <li>Set **Temporary** to **OFF** (this is critical for direct login API).</li>
+                            <li>Click **Save** / **Set password**.</li>
+                        </ul>
+                    </li>
+                </ol>
+
+                <h3>Step 5: Define Authorization Resources</h3>
+                <p>In Keycloak, we must define protected resources inside the client configuration.</p>
+                <ol>
+                    <li>Go to Client: <code>document-service-api</code> -> <strong>Authorization</strong> -> <strong>Resources</strong>.</li>
+                    <li>Create Resource:
+                        <ul>
+                            <li>Name: <code>Secret HR Report</code></li>
+                            <li>Type: <code>document</code></li>
+                            <li>URI: <code>/documents/hr/secret</code></li>
+                        </ul>
+                    </li>
+                    <li>Click <strong>Save</strong>.</li>
+                </ol>
+
+                <h3>Step 6: Create Policies in Client Authorization</h3>
+                <p>Create native **Role Policies** in the client's authorization console. These will serve as the browser-configurable rule checks.</p>
+                <ol>
+                    <li>Go to client's <strong>Authorization</strong> -> <strong>Policies</strong> -> <strong>Create Policy</strong> -> Select <strong>Role</strong>.</li>
+                    <li>Create the Department matching policy:
+                        <ul>
+                            <li>Name: <code>Require HR Role</code></li>
+                            <li>Roles: Add <code>dept-hr</code> and toggle **Required** to **ON**</li>
+                        </ul>
+                    </li>
+                    <li>Click <strong>Save</strong>.</li>
+                    <li>Go back to client's **Authorization** -> **Policies** -> **Create Policy** -> Select **Role** again.</li>
+                    <li>Create the Clearance matching policy:
+                        <ul>
+                            <li>Name: <code>Require Clearance 3 Role</code></li>
+                            <li>Roles: Add <code>clearance-3</code> and toggle **Required** to **ON**</li>
+                        </ul>
+                    </li>
+                    <li>Click <strong>Save</strong>.</li>
+                </ol>
+
+                <h3>Step 7: Create the Permission Binding</h3>
+                <p>Combine policies using a **Unanimous** decision strategy to ensure all conditions are satisfied before access is granted.</p>
+                <ol>
+                    <li>Go to client's <strong>Authorization</strong> -> <strong>Permissions</strong> -> <strong>Create Permission</strong>.</li>
+                    <li>Select <strong>Resource-based Permission</strong>.</li>
+                    <li>Fill out:
+                        <ul>
+                            <li>Name: <code>Secure Document Access Permission</code></li>
+                            <li>Resources: Select <code>Secret HR Report</code></li>
+                            <li>Policies: Select both <code>Require HR Role</code> and <code>Require Clearance 3 Role</code></li>
+                            <li>Decision Strategy: **Unanimous** (forces both policies to evaluate to positive)</li>
+                        </ul>
+                    </li>
+                    <li>Click <strong>Save</strong>.</li>
+                </ol>
+
+                <h3>Step 8: Testing the Policy Execution</h3>
+                <p>You can verify access rights using the Keycloak Authorization Endpoint. Let's obtain an Access Token for users and request access approval.</p>
+
+                <h4>1. Authenticate Alice (dept-hr, clearance-3)</h4>
+                <div class="code-container">
+                    <pre><code># Get Access Token for Alice
+curl -d "client_id=document-service-api" \
+     -d "username=alice" \
+     -d "password=password" \
+     -d "grant_type=password" \
+     -d "client_secret=&lt;YOUR_CLIENT_SECRET&gt;" \
+     -X POST http://localhost:8080/realms/abac-realm/protocol/openid-connect/token</code></pre>
+                </div>
+
+                <h4>2. Query Keycloak for Resource Authorization Decisions</h4>
+                <div class="code-container">
+                    <pre><code># Alice requests access to "Secret HR Report" (dept-hr and clearance-3 required)
+curl -H "Authorization: Bearer &lt;ALICE_ACCESS_TOKEN&gt;" \
+     -d "grant_type=urn:ietf:params:oauth:grant-type:uma-ticket" \
+     -d "audience=document-service-api" \
+     -d "response_mode=decision" \
+     -d "permission=Secret HR Report" \
+     -X POST http://localhost:8080/realms/abac-realm/protocol/openid-connect/token</code></pre>
+                </div>
+                <p>Response for Alice will be <code>{"result":true}</code> (Access Approved).</p>
+
+                <h4>3. Repeat with Bob (Standard permissions)</h4>
+                <p>When Bob requests access to the Secret HR Report, Keycloak's PDP evaluates the native role policies and returns a <code>403 Forbidden</code> (Access Denied) because he lacks the required <code>dept-hr</code> and <code>clearance-3</code> roles.</p>
+            </section>
+        </main>
+    </div>
+
+    <!-- Load Mermaid JS for static diagram rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'dark',
+            securityLevel: 'loose',
+            themeVariables: {
+                background: '#090d16',
+                primaryColor: '#6366f1',
+                primaryTextColor: '#fff',
+                lineColor: '#374151',
+                secondaryColor: '#1e293b'
+            }
+        });
+    </script>
+
+    <!-- Load Custom Simulator JS -->
+    <script src="simulator.js"></script>
+
+    <!-- Sidebar Active Nav Handler -->
+    <script>
+        const sections = document.querySelectorAll('section');
+        const navLinks = document.querySelectorAll('.nav-link');
+
+        window.addEventListener('scroll', () => {
+            let current = '';
+            sections.forEach(section => {
+                const sectionTop = section.offsetTop;
+                const sectionHeight = section.clientHeight;
+                if (pageYOffset >= (sectionTop - 120)) {
+                    current = section.getAttribute('id');
+                }
+            });
+
+            navLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href').slice(1) === current) {
+                    link.classList.add('active');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
