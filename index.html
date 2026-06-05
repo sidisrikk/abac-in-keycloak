@@ -375,9 +375,27 @@ if (userDept === resourceDept) {
                 <h3>Prerequisites</h3>
                 <p>You need <a href="https://docs.docker.com/get-docker/" target="_blank">Docker</a> and <a href="https://docs.docker.com/compose/" target="_blank">Docker Compose</a> installed on your machine.</p>
 
-                <h3>Step 1: Start a Standard Keycloak 26 Instance</h3>
-                <p>To configure authorization rules entirely from the browser console, we do not need custom JavaScript scripts or custom providers. We can use standard Keycloak features (Roles and native Role Policies). Therefore, we can run a standard Keycloak container directly.</p>
-                <p>Review the [docker-compose.yml](file:///home/wasuthep/Playground/keyclock_tuts/lab-code/docker-compose.yml) provided in the lab directory:</p>
+                <h3>Step 1: Build and Start Keycloak 26 with Pre-Bundled Scripts</h3>
+                <p>In Keycloak 26, the legacy <code>upload-scripts</code> feature is completely removed for security. JavaScript authorization policies must now be pre-packaged inside a custom provider JAR file and deployed to Keycloak's <code>/opt/keycloak/providers/</code> directory, while explicitly enabling the <code>scripts</code> feature flag.</p>
+                <p>To automate this seamlessly without installing zip utilities locally, we use a multi-stage Docker build. Review the [Dockerfile](file:///home/wasuthep/Playground/keyclock_tuts/lab-code/Dockerfile) and [docker-compose.yml](file:///home/wasuthep/Playground/keyclock_tuts/lab-code/docker-compose.yml) provided in the lab directory:</p>
+
+                <div class="code-container">
+                    <div class="code-header">
+                        <span class="code-title">lab-code/Dockerfile</span>
+                    </div>
+                    <pre><code># Bundles policy script and META-INF descriptor into a JAR provider
+FROM alpine:latest AS builder
+RUN apk add --no-cache zip
+WORKDIR /build
+COPY abac-policy.js .
+COPY META-INF ./META-INF
+RUN zip -r abac-policy-provider.jar abac-policy.js META-INF
+
+FROM quay.io/keycloak/keycloak:26.6.2
+COPY --from=builder /build/abac-policy-provider.jar /opt/keycloak/providers/
+ENV KC_FEATURES=scripts
+RUN /opt/keycloak/bin/kc.sh build</code></pre>
+                </div>
 
                 <div class="code-container">
                     <div class="code-header">
@@ -388,7 +406,7 @@ if (userDept === resourceDept) {
 
 services:
   keycloak:
-    image: quay.io/keycloak/keycloak:26.6.2
+    build: .
     container_name: keycloak_abac_lab
     environment:
       - KEYCLOAK_ADMIN=admin
@@ -398,9 +416,9 @@ services:
     command: start-dev</code></pre>
                 </div>
 
-                <p>Start the container by running this in your terminal:</p>
+                <p>Compile the image and start the container by running this in your terminal:</p>
                 <div class="code-container">
-                    <pre><code>docker-compose up -d</code></pre>
+                    <pre><code>docker-compose up --build -d</code></pre>
                 </div>
 
                 <div class="highlight-box warning">
@@ -426,25 +444,7 @@ services:
                     <li>Click <strong>Save</strong>. You will now see an <strong>Authorization</strong> tab on the client details page.</li>
                 </ol>
 
-                <h3>Step 3: Setup Realm Roles</h3>
-                <p>Instead of custom JavaScript code to inspect user attributes, we can use Keycloak's native **Realm Roles** to represent attributes, which allows configuring policy constraints entirely via the browser UI.</p>
-                <ol>
-                    <li>In the left sidebar, navigate to <strong>Realm roles</strong> and click <strong>Create role</strong>.</li>
-                    <li>Create the role representing the HR department:
-                        <ul>
-                            <li>Role name: <code>dept-hr</code></li>
-                        </ul>
-                    </li>
-                    <li>Click <strong>Save</strong>.</li>
-                    <li>Go back to **Realm roles** and click **Create role** again:
-                        <ul>
-                            <li>Role name: <code>clearance-3</code> (represents Clearance Level 3)</li>
-                        </ul>
-                    </li>
-                    <li>Click <strong>Save</strong>.</li>
-                </ol>
-
-                <h3>Step 4: Create Users and Assign Roles</h3>
+                <h3>Step 3: Setup User Attributes and Profile</h3>
                 <p>Create two users to test access permissions. Due to Keycloak 26's default **User Profile** policies, basic fields must be fully completed to allow API logins without encountering "Account is not fully set up" errors.</p>
                 <ol>
                     <li>Create user: <strong>alice</strong>
@@ -454,13 +454,11 @@ services:
                             <li><strong>First Name:</strong> <code>Alice</code></li>
                             <li><strong>Last Name:</strong> <code>Smith</code></li>
                             <li><strong>Email verified:</strong> Toggle **ON**</li>
-                            <li><strong>Required user actions:</strong> Ensure this field is **empty**</li>
-                            <li>Click **Save**.</li>
-                            <li>Go to the **Role mapping** tab:
+                            <li><strong>Required user actions:</strong> Ensure this field is **empty** (no actions like Update Password or Verify Email listed)</li>
+                            <li>Go to the **Attributes** tab:
                                 <ul>
-                                    <li>Click **Assign role**.</li>
-                                    <li>Select both <code>dept-hr</code> and <code>clearance-3</code>.</li>
-                                    <li>Click **Assign**.</li>
+                                    <li>Add Attribute: Key = <code>department</code>, Value = <code>hr</code></li>
+                                    <li>Add Attribute: Key = <code>clearance_level</code>, Value = <code>3</code></li>
                                 </ul>
                             </li>
                         </ul>
@@ -473,8 +471,12 @@ services:
                             <li><strong>Last Name:</strong> <code>Jones</code></li>
                             <li><strong>Email verified:</strong> Toggle **ON**</li>
                             <li><strong>Required user actions:</strong> Ensure this field is **empty**</li>
-                            <li>Click **Save**.</li>
-                            <li>Bob has no department role and standard clearance, so do **not** assign the <code>dept-hr</code> or <code>clearance-3</code> roles.</li>
+                            <li>Go to the **Attributes** tab:
+                                <ul>
+                                    <li>Add Attribute: Key = <code>department</code>, Value = <code>eng</code></li>
+                                    <li>Add Attribute: Key = <code>clearance_level</code>, Value = <code>1</code></li>
+                                </ul>
+                            </li>
                         </ul>
                     </li>
                     <li>Set password credentials for both users:
@@ -488,8 +490,8 @@ services:
                     </li>
                 </ol>
 
-                <h3>Step 5: Define Authorization Resources</h3>
-                <p>In Keycloak, we must define protected resources inside the client configuration.</p>
+                <h3>Step 4: Define Authorization Resources & Attributes</h3>
+                <p>In Keycloak, we must define protected resources and map attributes to them.</p>
                 <ol>
                     <li>Go to Client: <code>document-service-api</code> -> <strong>Authorization</strong> -> <strong>Resources</strong>.</li>
                     <li>Create Resource:
@@ -497,34 +499,23 @@ services:
                             <li>Name: <code>Secret HR Report</code></li>
                             <li>Type: <code>document</code></li>
                             <li>URI: <code>/documents/hr/secret</code></li>
+                            <li>Add Attributes: Key = <code>department</code>, Value = <code>hr</code></li>
+                            <li>Add Attributes: Key = <code>classification_level</code>, Value = <code>3</code></li>
                         </ul>
                     </li>
                     <li>Click <strong>Save</strong>.</li>
                 </ol>
 
-                <h3>Step 6: Create Policies in Client Authorization</h3>
-                <p>Create native **Role Policies** in the client's authorization console. These will serve as the browser-configurable rule checks.</p>
+                <h3>Step 5: Register the Pre-Bundled JavaScript Policy</h3>
+                <p>Because our custom policy has been packaged and registered in [keycloak-scripts.json](file:///home/wasuthep/Playground/keyclock_tuts/lab-code/META-INF/keycloak-scripts.json), Keycloak 26 makes it available in the console by default. You do not need to copy-paste code into the browser.</p>
                 <ol>
-                    <li>Go to client's <strong>Authorization</strong> -> <strong>Policies</strong> -> <strong>Create Policy</strong> -> Select <strong>Role</strong>.</li>
-                    <li>Create the Department matching policy:
-                        <ul>
-                            <li>Name: <code>Require HR Role</code></li>
-                            <li>Roles: Add <code>dept-hr</code> and toggle **Required** to **ON**</li>
-                        </ul>
-                    </li>
-                    <li>Click <strong>Save</strong>.</li>
-                    <li>Go back to client's **Authorization** -> **Policies** -> **Create Policy** -> Select **Role** again.</li>
-                    <li>Create the Clearance matching policy:
-                        <ul>
-                            <li>Name: <code>Require Clearance 3 Role</code></li>
-                            <li>Roles: Add <code>clearance-3</code> and toggle **Required** to **ON**</li>
-                        </ul>
-                    </li>
+                    <li>Go to client's <strong>Authorization</strong> -> <strong>Policies</strong> -> <strong>Create Policy</strong>.</li>
+                    <li>Look for our pre-registered policy under the dropdown list. Select **Verify Dept and Clearance ABAC Policy** (the name matches the registry entry).</li>
+                    <li>Give it a local name: <code>Verify Dept and Clearance ABAC Policy</code>.</li>
                     <li>Click <strong>Save</strong>.</li>
                 </ol>
 
-                <h3>Step 7: Create the Permission Binding</h3>
-                <p>Combine policies using a **Unanimous** decision strategy to ensure all conditions are satisfied before access is granted.</p>
+                <h3>Step 6: Create the Permission Binding</h3>
                 <ol>
                     <li>Go to client's <strong>Authorization</strong> -> <strong>Permissions</strong> -> <strong>Create Permission</strong>.</li>
                     <li>Select <strong>Resource-based Permission</strong>.</li>
@@ -532,17 +523,16 @@ services:
                         <ul>
                             <li>Name: <code>Secure Document Access Permission</code></li>
                             <li>Resources: Select <code>Secret HR Report</code></li>
-                            <li>Policies: Select both <code>Require HR Role</code> and <code>Require Clearance 3 Role</code></li>
-                            <li>Decision Strategy: **Unanimous** (forces both policies to evaluate to positive)</li>
+                            <li>Policies: Select <code>Verify Dept and Clearance ABAC Policy</code></li>
                         </ul>
                     </li>
                     <li>Click <strong>Save</strong>.</li>
                 </ol>
 
-                <h3>Step 8: Testing the Policy Execution</h3>
+                <h3>Step 7: Testing the Policy Execution</h3>
                 <p>You can verify access rights using the Keycloak Authorization Endpoint. Let's obtain an Access Token for users and request access approval.</p>
 
-                <h4>1. Authenticate Alice (dept-hr, clearance-3)</h4>
+                <h4>1. Authenticate Alice (Department: HR, Clearance: 3)</h4>
                 <div class="code-container">
                     <pre><code># Get Access Token for Alice
 curl -d "client_id=document-service-api" \
@@ -553,20 +543,21 @@ curl -d "client_id=document-service-api" \
      -X POST http://localhost:8080/realms/abac-realm/protocol/openid-connect/token</code></pre>
                 </div>
 
-                <h4>2. Query Keycloak for Resource Authorization Decisions</h4>
+                <h4>2. Query keycloak for Resource Authorization Decisions</h4>
                 <div class="code-container">
-                    <pre><code># Alice requests access to "Secret HR Report" (dept-hr and clearance-3 required)
+                    <pre><code># Alice requests access to "Secret HR Report" (Clearance 3 required, Dept HR required)
 curl -H "Authorization: Bearer &lt;ALICE_ACCESS_TOKEN&gt;" \
      -d "grant_type=urn:ietf:params:oauth:grant-type:uma-ticket" \
      -d "audience=document-service-api" \
      -d "response_mode=decision" \
      -d "permission=Secret HR Report" \
+     -d "network_location=office" \
      -X POST http://localhost:8080/realms/abac-realm/protocol/openid-connect/token</code></pre>
                 </div>
                 <p>Response for Alice will be <code>{"result":true}</code> (Access Approved).</p>
 
-                <h4>3. Repeat with Bob (Standard permissions)</h4>
-                <p>When Bob requests access to the Secret HR Report, Keycloak's PDP evaluates the native role policies and returns a <code>403 Forbidden</code> (Access Denied) because he lacks the required <code>dept-hr</code> and <code>clearance-3</code> roles.</p>
+                <h4>3. Repeat with Bob (Department: Eng, Clearance: 1)</h4>
+                <p>When Bob requests access to the Secret HR Report, Keycloak's PDP evaluates the JS policy and returns a <code>403 Forbidden</code> (Access Denied) due to both a department mismatch and insufficient clearance levels.</p>
             </section>
         </main>
     </div>

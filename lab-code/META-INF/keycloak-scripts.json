@@ -1,0 +1,9 @@
+{
+    "policies": [
+        {
+            "name": "Verify Dept and Clearance ABAC Policy",
+            "fileName": "abac-policy.js",
+            "description": "Verify Dept and Clearance ABAC Policy"
+        }
+    ]
+}
