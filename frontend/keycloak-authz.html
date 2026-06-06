@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Keycloak AuthZ - Attribute-Based Access Control (ABAC) in Keycloak</title>
+    <meta name="description" content="An overview of Keycloak Authorization Services, their architecture, components, and how they function as a PDP.">
+    <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="brand-section">
+                <div class="brand-logo">KC</div>
+                <div class="brand-title">ABAC Guide</div>
+            </div>
+            <ul class="nav-menu">
+                <li class="nav-item"><a href="index.html" class="nav-link" id="nav-intro">1. What is ABAC?</a></li>
+                <li class="nav-item"><a href="keycloak-authz.html" class="nav-link active" id="nav-keycloakz">2. Keycloak AuthZ</a></li>
+                <li class="nav-item"><a href="abac-impl.html" class="nav-link" id="nav-abac-impl">3. Implementing ABAC</a></li>
+                <li class="nav-item"><a href="simulator.html" class="nav-link" id="nav-simulator">4. Live ABAC Simulator</a></li>
+                <li class="nav-item"><a href="hands-on-lab.html" class="nav-link" id="nav-lab">5. Hands-on Lab</a></li>
+                <li class="nav-item"><a href="rpt-evolution.html" class="nav-link" id="nav-rpt">6. Evolving to RPT</a></li>
+                <li class="nav-item"><a href="rpt-strategies.html" class="nav-link" id="nav-strategies">7. RPT Strategies</a></li>
+                <li class="nav-item"><a href="alternative-approaches.html" class="nav-link" id="nav-alternatives">8. Alternative Approaches</a></li>
+            </ul>
+        </nav>
+
+        <!-- Main Content Panel -->
+        <main class="main-content">
+            <header>
+                <h1>Attribute-Based Access Control (ABAC) in Keycloak</h1>
+                <p class="text-secondary">Learn how to build fine-grained, dynamic, and context-aware security policies using user, resource, and environment attributes in Keycloak.</p>
+            </header>
+
+            <!-- Section 2: Keycloak Authorization Services -->
+            <section id="keycloak-authz">
+                <h2>2. Keycloak Authorization Services</h2>
+                <p>Keycloak supports fine-grained authorization policies under its <strong>Authorization Services</strong>. This is distinct from simple client scopes and role claims. It allows you to build a true centralized PDP.</p>
+
+                <div class="highlight-box tip">
+                    <strong>Key concept:</strong> Think of Keycloak Authorization Services as an <strong>authorization layer</strong> that sits on top of authentication. Authentication answers <em>"who is the user?"</em> while the auth service answers <em>"can this authenticated user perform this action on this protected thing under these conditions?"</em>
+                </div>
+
+                <h3>How the Auth Service Works</h3>
+                <p>In practice, your API or application is registered in Keycloak as a <strong>resource server</strong>. That resource server sends authorization requests to Keycloak, and Keycloak evaluates the request by combining protected resources, allowed scopes, decision policies, and the permission objects that bind them together.</p>
+                
+                <h3>Key Components:</h3>
+                <ul>
+                    <li><strong>Resource Servers:</strong> The application client representing the API or service you want to protect.</li>
+                    <li><strong>Resources:</strong> The assets being protected (e.g., specific URLs, documents, files, or generic APIs) which can have their own custom attributes.</li>
+                    <li><strong>Authorization Scopes:</strong> The actions allowed on resources (e.g., <code>read</code>, <code>write</code>, <code>delete</code>).</li>
+                    <li><strong>Policies:</strong> The conditions that must be met to grant access (e.g., JavaScript scripts, time rules, role requirements).</li>
+                    <li><strong>Permissions:</strong> The binding elements that tie together Resources, Scopes, and Policies.</li>
+                </ul>
+
+                <div class="mermaid">
+                    graph TD
+                        Permission[Permission] --> Resource[Resource: /documents/*]
+                        Permission --> Scope[Scope: write]
+                        Permission --> Policy[Policy: Match Department JS]
+                </div>
+
+                <h3>The Four Pillars: Resource, Scope, Policy, Permission</h3>
+                <p>These four concepts are the core modeling units inside Keycloak Authorization Services. If they are designed cleanly, ABAC and other fine-grained models become much easier to reason about.</p>
+
+                <div class="grid-2">
+                    <div class="feature-card">
+                        <div class="card-icon">1</div>
+                        <h3>Resource</h3>
+                        <p>A <strong>resource</strong> is the thing being protected: an API endpoint, document, invoice, report, or business object. In Keycloak, resources can also carry attributes like <code>ownerDepartment</code>, <code>region</code>, or <code>classification</code>.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="card-icon">2</div>
+                        <h3>Scope</h3>
+                        <p>A <strong>scope</strong> is the action requested on the resource, such as <code>read</code>, <code>create</code>, <code>approve</code>, or <code>delete</code>. Scopes keep actions separate from the resource itself.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="card-icon">3</div>
+                        <h3>Policy</h3>
+                        <p>A <strong>policy</strong> defines the rule used to make the decision. It can evaluate roles, groups, user attributes, resource attributes, time windows, networks, or JavaScript logic for dynamic ABAC checks.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="card-icon">4</div>
+                        <h3>Permission</h3>
+                        <p>A <strong>permission</strong> is the binding layer. It connects one or more resources and scopes to one or more policies, telling Keycloak exactly <em>when</em> access should be granted.</p>
+                    </div>
+                </div>
+
+                <div class="highlight-box">
+                    <strong>Simple mental model:</strong> <code>Permission = Resource + Scope + Policy</code><br>
+                    Example: Allow <code>read</code> on <code>employee-record</code> only when the policy confirms the user's department and clearance match the resource requirements.
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Load Mermaid JS for static diagram rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script src="./simulator-template.js"></script>
+    <script src="./simulator.js"></script>
+    <script src="./page-bootstrap.js"></script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live ABAC Simulator - Attribute-Based Access Control (ABAC) in Keycloak</title>
+    <meta name="description" content="An interactive simulator to test Attribute-Based Access Control (ABAC) policies dynamically with custom subject, resource, and environment attributes.">
+    <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="brand-section">
+                <div class="brand-logo">KC</div>
+                <div class="brand-title">ABAC Guide</div>
+            </div>
+            <ul class="nav-menu">
+                <li class="nav-item"><a href="index.html" class="nav-link" id="nav-intro">1. What is ABAC?</a></li>
+                <li class="nav-item"><a href="keycloak-authz.html" class="nav-link" id="nav-keycloakz">2. Keycloak AuthZ</a></li>
+                <li class="nav-item"><a href="abac-impl.html" class="nav-link" id="nav-abac-impl">3. Implementing ABAC</a></li>
+                <li class="nav-item"><a href="simulator.html" class="nav-link active" id="nav-simulator">4. Live ABAC Simulator</a></li>
+                <li class="nav-item"><a href="hands-on-lab.html" class="nav-link" id="nav-lab">5. Hands-on Lab</a></li>
+                <li class="nav-item"><a href="rpt-evolution.html" class="nav-link" id="nav-rpt">6. Evolving to RPT</a></li>
+                <li class="nav-item"><a href="rpt-strategies.html" class="nav-link" id="nav-strategies">7. RPT Strategies</a></li>
+                <li class="nav-item"><a href="alternative-approaches.html" class="nav-link" id="nav-alternatives">8. Alternative Approaches</a></li>
+            </ul>
+        </nav>
+
+        <!-- Main Content Panel -->
+        <main class="main-content">
+            <header>
+                <h1>Attribute-Based Access Control (ABAC) in Keycloak</h1>
+                <p class="text-secondary">Learn how to build fine-grained, dynamic, and context-aware security policies using user, resource, and environment attributes in Keycloak.</p>
+            </header>
+
+            <!-- Section 4: Live ABAC Simulator -->
+            <section id="simulator">
+                <h2>4. Live Interactive ABAC Simulator</h2>
+                <p>Explore how Keycloak evaluates access dynamically. Adjust the Subject, Resource, and Environment attributes below, select which policy rules are active, and see the real-time sequence flow and decision outcome.</p>
+                <div id="simulator-root"></div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Load Mermaid JS for static diagram rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script src="./simulator-template.js"></script>
+    <script src="./simulator.js"></script>
+    <script src="./page-bootstrap.js"></script>
+</body>
+</html>

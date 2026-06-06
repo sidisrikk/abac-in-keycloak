@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RPT Strategies - Attribute-Based Access Control (ABAC) in Keycloak</title>
+    <meta name="description" content="A guide to Requesting Party Token (RPT) strategies in Keycloak, comparing all-at-once, per-resource, and hybrid approaches.">
+    <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="brand-section">
+                <div class="brand-logo">KC</div>
+                <div class="brand-title">ABAC Guide</div>
+            </div>
+            <ul class="nav-menu">
+                <li class="nav-item"><a href="index.html" class="nav-link" id="nav-intro">1. What is ABAC?</a></li>
+                <li class="nav-item"><a href="keycloak-authz.html" class="nav-link" id="nav-keycloakz">2. Keycloak AuthZ</a></li>
+                <li class="nav-item"><a href="abac-impl.html" class="nav-link" id="nav-abac-impl">3. Implementing ABAC</a></li>
+                <li class="nav-item"><a href="simulator.html" class="nav-link" id="nav-simulator">4. Live ABAC Simulator</a></li>
+                <li class="nav-item"><a href="hands-on-lab.html" class="nav-link" id="nav-lab">5. Hands-on Lab</a></li>
+                <li class="nav-item"><a href="rpt-evolution.html" class="nav-link" id="nav-rpt">6. Evolving to RPT</a></li>
+                <li class="nav-item"><a href="rpt-strategies.html" class="nav-link active" id="nav-strategies">7. RPT Strategies</a></li>
+                <li class="nav-item"><a href="alternative-approaches.html" class="nav-link" id="nav-alternatives">8. Alternative Approaches</a></li>
+            </ul>
+        </nav>
+
+        <!-- Main Content Panel -->
+        <main class="main-content">
+            <header>
+                <h1>Attribute-Based Access Control (ABAC) in Keycloak</h1>
+                <p class="text-secondary">Learn how to build fine-grained, dynamic, and context-aware security policies using user, resource, and environment attributes in Keycloak.</p>
+            </header>
+
+            <!-- Section 7: RPT Request Strategies -->
+            <section id="rpt-strategies">
+                <h2>7. RPT Request Strategies: One Call vs Per-Resource</h2>
+                <p>A common question when using RPTs: should you request permissions for <strong>all resources at once</strong>, or <strong>one resource at a time</strong>? The answer depends on your application's scale and requirements.</p>
+
+                <h3>Strategy A: All Resources at Once (Recommended for Most Apps)</h3>
+                <p>Omit the <code>permission</code> parameter entirely — Keycloak evaluates <strong>every</strong> resource and returns all permissions the user is granted:</p>
+                <div class="code-container">
+                    <div class="code-header">
+                        <span class="code-title">Request RPT for All Resources</span>
+                    </div>
+                    <pre><code># Single call → RPT with ALL permitted resources and scopes
+curl -s -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+     -d "grant_type=urn:ietf:params:oauth:grant-type:uma-ticket" \
+     -d "audience=document-service-api" \
+     -X POST http://localhost:8080/realms/abac-realm/protocol/openid-connect/token \
+     | jq -r '.access_token'</code></pre>
+                </div>
+                <p>The resulting RPT contains every resource Alice can access:</p>
+                <div class="code-container">
+                    <div class="code-header">
+                        <span class="code-title">RPT with All Permissions (Alice)</span>
+                    </div>
+                    <pre><code>"authorization": {
+  "permissions": [
+    {
+      "rsname": "Secret HR Report",
+      "scopes": ["read", "write", "delete"]
+    },
+    {
+      "rsname": "HR Handbook",
+      "scopes": ["read", "write"]
+    },
+    {
+      "rsname": "Company Newsletter",
+      "scopes": ["read"]
+    }
+  ]
+}</code></pre>
+                </div>
+
+                <div class="highlight-box tip">
+                    <strong>This is the recommended approach</strong> for apps with a manageable number of resources (under ~50). One authentication call + one RPT call = done. The token carries all permissions, and your resource server validates locally with zero Keycloak round-trips.
+                </div>
+
+                <h3>Strategy B: Per-Resource RPT (For Large-Scale Systems)</h3>
+                <p>Specify the <code>permission</code> parameter to request access for a <strong>specific resource only</strong>. This is useful when requesting all resources would be impractical.</p>
+                <div class="code-container">
+                    <div class="code-header">
+                        <span class="code-title">Request RPT for One Resource</span>
+                    </div>
+                    <pre><code># Only evaluate permissions for the resource the user is accessing
+curl -s -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+     -d "grant_type=urn:ietf:params:oauth:grant-type:uma-ticket" \
+     -d "audience=document-service-api" \
+     -d "permission=Secret HR Report" \
+     -X POST http://localhost:8080/realms/abac-realm/protocol/openid-connect/token \
+     | jq -r '.access_token'</code></pre>
+                </div>
+
+                <h4>When Per-Resource Is Necessary</h4>
+
+                <div class="grid-2">
+                    <div class="feature-card">
+                        <div class="card-icon">📦</div>
+                        <h3>Token Size Limits</h3>
+                        <p>An app with 5,000 documents would generate an RPT with 5,000 permission entries. This token could exceed <strong>50KB+</strong> — too large for HTTP headers (most servers cap at 8–16KB). Per-resource RPTs stay small and focused.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="card-icon">🌐</div>
+                        <h3>Different Context Per Resource</h3>
+                        <p>The <code>claim_token</code> for environment context is sent <strong>once per RPT request</strong>. If Resource A needs <code>network_location=office</code> and Resource B needs <code>network_location=branch-tokyo</code>, you need separate requests with different context.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="card-icon">⏱️</div>
+                        <h3>Lazy Evaluation (Performance)</h3>
+                        <p>A dashboard listing 200 documents where users typically open 2–3. Evaluating all 200 policies at login adds latency. Instead, request permissions per-document when the user clicks — instant login, tiny per-click cost.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="card-icon">🔒</div>
+                        <h3>Principle of Least Privilege</h3>
+                        <p>If a token is intercepted, a per-resource RPT reveals access to <strong>1 resource</strong>. An all-at-once RPT reveals the user's <strong>entire permission map</strong>. Security-sensitive systems prefer minimal exposure.</p>
+                    </div>
+                </div>
+
+                <h3>Strategy C: Hybrid — RPT Upgrade (Best of Both)</h3>
+                <p>Keycloak supports <strong>appending permissions</strong> to an existing RPT. Start with common resources at login, then upgrade the token when the user accesses additional resources:</p>
+                <div class="code-container">
+                    <div class="code-header">
+                        <span class="code-title">Hybrid RPT Upgrade Flow</span>
+                    </div>
+                    <pre><code># Step 1: Login → get RPT with commonly-accessed resources
+RPT=$(curl -s -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+     -d "grant_type=urn:ietf:params:oauth:grant-type:uma-ticket" \
+     -d "audience=document-service-api" \
+     -d "permission=Dashboard" \
+     -d "permission=User Profile" \
+     -X POST http://localhost:8080/realms/abac-realm/protocol/openid-connect/token \
+     | jq -r '.access_token')
+
+# RPT now contains: Dashboard + User Profile permissions
+
+# Step 2: User clicks on a specific document → upgrade the RPT
+UPGRADED_RPT=$(curl -s -H "Authorization: Bearer ${RPT}" \
+     -d "grant_type=urn:ietf:params:oauth:grant-type:uma-ticket" \
+     -d "audience=document-service-api" \
+     -d "permission=Secret HR Report" \
+     -X POST http://localhost:8080/realms/abac-realm/protocol/openid-connect/token \
+     | jq -r '.access_token')
+
+# UPGRADED_RPT now contains: Dashboard + User Profile + Secret HR Report
+# The old permissions are preserved and the new one is appended</code></pre>
+                </div>
+
+                <div class="highlight-box tip">
+                    <strong>Key Detail:</strong> When you submit an existing RPT as the Bearer token in a new UMA request, Keycloak <strong>merges</strong> the old permissions with the newly evaluated ones. You get a single token that grows incrementally as the user navigates your application.
+                </div>
+
+                <h3>Decision Guide: Which Strategy to Use</h3>
+                <table style="width:100%; border-collapse: collapse; margin: 1.5rem 0;">
+                    <thead>
+                        <tr style="border-bottom: 2px solid #374151;">
+                            <th style="text-align:left; padding: 0.75rem; color: #a5b4fc;">Scenario</th>
+                            <th style="text-align:left; padding: 0.75rem; color: #a5b4fc;">Strategy</th>
+                            <th style="text-align:left; padding: 0.75rem; color: #a5b4fc;">Why</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr style="border-bottom: 1px solid #1e293b;">
+                            <td style="padding: 0.75rem;">App with &lt; 50 resources</td>
+                            <td style="padding: 0.75rem;"><strong>All at once</strong> ✅</td>
+                            <td style="padding: 0.75rem;">Simple, small token, fast</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #1e293b;">
+                            <td style="padding: 0.75rem;">App with 1,000+ resources</td>
+                            <td style="padding: 0.75rem;"><strong>Per-resource</strong></td>
+                            <td style="padding: 0.75rem;">Token size limits, evaluation cost</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #1e293b;">
+                            <td style="padding: 0.75rem;">Same context for all resources</td>
+                            <td style="padding: 0.75rem;"><strong>All at once</strong> ✅</td>
+                            <td style="padding: 0.75rem;">No reason to split</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #1e293b;">
+                            <td style="padding: 0.75rem;">Different context per resource</td>
+                            <td style="padding: 0.75rem;"><strong>Per-resource</strong></td>
+                            <td style="padding: 0.75rem;">Different <code>claim_token</code> needed</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #1e293b;">
+                            <td style="padding: 0.75rem;">Dashboard → user picks one item</td>
+                            <td style="padding: 0.75rem;"><strong>Hybrid upgrade</strong></td>
+                            <td style="padding: 0.75rem;">Fast login, grow token on demand</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #1e293b;">
+                            <td style="padding: 0.75rem;">Mobile app / limited bandwidth</td>
+                            <td style="padding: 0.75rem;"><strong>All at once</strong> ✅</td>
+                            <td style="padding: 0.75rem;">Fewer HTTP round-trips</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 0.75rem;">High-security / zero-trust</td>
+                            <td style="padding: 0.75rem;"><strong>Per-resource</strong></td>
+                            <td style="padding: 0.75rem;">Minimal exposure if token leaks</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div class="highlight-box warning">
+                    <strong>Bottom Line:</strong> For most applications, <strong>request all resources at once</strong>. The per-resource and hybrid approaches exist for edge cases involving scale, security, or varying context. Your two-step flow remains: <strong>1 authentication call + 1 RPT call = done</strong>.
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Load Mermaid JS for static diagram rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script src="./simulator-template.js"></script>
+    <script src="./simulator.js"></script>
+    <script src="./page-bootstrap.js"></script>
+</body>
+</html>

@@ -37,24 +37,20 @@ function initializeMermaid() {
 }
 
 function initializeActiveNav() {
-    const sections = document.querySelectorAll('section');
     const navLinks = document.querySelectorAll('.nav-link');
+    const path = window.location.pathname;
+    let page = path.substring(path.lastIndexOf('/') + 1);
+    
+    if (!page || page === '/') {
+        page = 'index.html';
+    }
 
-    window.addEventListener('scroll', () => {
-        let current = '';
-
-        sections.forEach((section) => {
-            const sectionTop = section.offsetTop;
-            if (window.pageYOffset >= (sectionTop - 120)) {
-                current = section.getAttribute('id');
-            }
-        });
-
-        navLinks.forEach((link) => {
+    navLinks.forEach((link) => {
+        const href = link.getAttribute('href');
+        if (href === page) {
+            link.classList.add('active');
+        } else {
             link.classList.remove('active');
-            if (link.getAttribute('href').slice(1) === current) {
-                link.classList.add('active');
-            }
-        });
+        }
     });
 }

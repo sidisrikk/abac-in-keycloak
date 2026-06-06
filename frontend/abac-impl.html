@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Implementing ABAC - Attribute-Based Access Control (ABAC) in Keycloak</title>
+    <meta name="description" content="Step-by-step guidance on implementing ABAC in Keycloak using attributes and JavaScript policies packaged in a JAR file.">
+    <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="brand-section">
+                <div class="brand-logo">KC</div>
+                <div class="brand-title">ABAC Guide</div>
+            </div>
+            <ul class="nav-menu">
+                <li class="nav-item"><a href="index.html" class="nav-link" id="nav-intro">1. What is ABAC?</a></li>
+                <li class="nav-item"><a href="keycloak-authz.html" class="nav-link" id="nav-keycloakz">2. Keycloak AuthZ</a></li>
+                <li class="nav-item"><a href="abac-impl.html" class="nav-link active" id="nav-abac-impl">3. Implementing ABAC</a></li>
+                <li class="nav-item"><a href="simulator.html" class="nav-link" id="nav-simulator">4. Live ABAC Simulator</a></li>
+                <li class="nav-item"><a href="hands-on-lab.html" class="nav-link" id="nav-lab">5. Hands-on Lab</a></li>
+                <li class="nav-item"><a href="rpt-evolution.html" class="nav-link" id="nav-rpt">6. Evolving to RPT</a></li>
+                <li class="nav-item"><a href="rpt-strategies.html" class="nav-link" id="nav-strategies">7. RPT Strategies</a></li>
+                <li class="nav-item"><a href="alternative-approaches.html" class="nav-link" id="nav-alternatives">8. Alternative Approaches</a></li>
+            </ul>
+        </nav>
+
+        <!-- Main Content Panel -->
+        <main class="main-content">
+            <header>
+                <h1>Attribute-Based Access Control (ABAC) in Keycloak</h1>
+                <p class="text-secondary">Learn how to build fine-grained, dynamic, and context-aware security policies using user, resource, and environment attributes in Keycloak.</p>
+            </header>
+
+            <!-- Section 3: Implementing ABAC in Keycloak -->
+            <section id="abac-impl">
+                <h2>3. Implementing ABAC</h2>
+                <p>To implement Attribute-Based Access Control (ABAC) in Keycloak, attributes must be populated across three logical layers:</p>
+                
+                <ol>
+                    <li><strong>Subject (User) Attributes:</strong> Defined in Keycloak on User profiles (e.g., <code>department</code>, <code>clearance_level</code>).</li>
+                    <li><strong>Resource Attributes:</strong> Defined inside the Keycloak Authorization tab under Resources (e.g., <code>department</code>, <code>classification_level</code>).</li>
+                    <li><strong>Context/Environment Attributes:</strong> Provided at runtime within the evaluation request context (e.g., <code>network_location</code>).</li>
+                </ol>
+
+                <div class="highlight-box">
+                    <strong>💡 Modern Keycloak Rule:</strong> To write dynamic attribute matching rules, Keycloak uses <strong>JavaScript Policies</strong>. In Keycloak 18 and newer (including Keycloak 26), uploading raw JavaScript scripts directly via the Admin Console UI is disabled for security reasons. Instead, policies must be packaged into a custom provider <strong>JAR</strong> file and deployed to the server's filesystem.
+                </div>
+
+                <h3>📦 Understanding JARs in the Keycloak World</h3>
+                <p>If you're new to the Java ecosystem, a <strong>JAR (Java Archive)</strong> is essentially a standard ZIP file. It bundles Java classes, static assets, scripts, and metadata files together into a single file so they can be easily distributed and loaded by a Java runtime.</p>
+                
+                <p>Keycloak uses JAR files to enable its core customization system:</p>
+                <ul>
+                    <li><strong>Service Provider Interface (SPI):</strong> Keycloak is designed to be fully modular. Almost every feature (custom login screens, SMS authenticators, user databases, and policy checkers) is defined by an SPI. Developers create custom plugins (called providers) by implementing these SPIs and bundling their files into a JAR.</li>
+                    <li><strong>The Script Provider SPI:</strong> The Keycloak JavaScript engine operates as an SPI. When you package your <code>.js</code> files inside a provider JAR and place it in Keycloak's <code>/opt/keycloak/providers/</code> directory, the server extracts and registers those scripts at startup, making them available as selectable policies in the Admin UI.</li>
+                </ul>
+
+                <h4>Anatomy of a JavaScript Policy JAR</h4>
+                <p>To make Keycloak recognize the scripts inside your JAR, you must package them using a specific directory structure. A descriptor file named <code>keycloak-scripts.json</code> must reside inside the <code>META-INF/</code> directory:</p>
+                
+                <div class="code-container">
+                    <div class="code-header">
+                        <span class="code-title">JAR Directory Structure</span>
+                    </div>
+                    <pre><code>abac-policy-provider.jar
+├── abac-policy.js                  # The script containing our ABAC logic
+└── META-INF/
+    └── keycloak-scripts.json       # Descriptor metadata registering the script</code></pre>
+                </div>
+
+                <h3>1️⃣ The Deployment Descriptor: <code>keycloak-scripts.json</code></h3>
+                <p>This JSON file registers the JS files inside the JAR as custom policies. When Keycloak deploys this JAR, it reads this descriptor and creates a policy entry in the Admin Console database matching these details.</p>
+
+                <div class="code-container">
+                    <div class="code-header">
+                        <span class="code-title">lab-code/META-INF/keycloak-scripts.json</span>
+                        <button class="btn-copy" onclick="navigator.clipboard.writeText(document.getElementById('scripts-json-code').textContent); this.textContent='Copied!'; setTimeout(() => this.textContent='Copy', 1500)">Copy</button>
+                    </div>
+                    <pre><code id="scripts-json-code">{
+    "policies": [
+        {
+            "name": "Verify Dept and Clearance ABAC Policy",
+            "fileName": "abac-policy.js",
+            "description": "Verify Dept and Clearance ABAC Policy"
+        }
+    ]
+}</code></pre>
+                </div>
+
+                <h3>2️⃣ The Real JavaScript Policy: <code>abac-policy.js</code></h3>
+                <p>Here is the real production-ready script used in the lab. Keycloak executes this JS code directly within the Java Virtual Machine (JVM) at evaluation time:</p>
+
+                <div class="highlight-box">
+                    <strong>⚠️ Key Java Integration Concept:</strong> Since the policy engine runs on Java, values fetched from <code>resource.getAttributes()</code> return Java collections (like <code>java.util.List</code>). We implement the helper <code>getSingleValue()</code> to safely extract values from these Java objects and map them to standard JavaScript scalar types.
+                </div>
+
+                <div class="code-container">
+                    <div class="code-header">
+                        <span class="code-title">lab-code/abac-policy.js</span>
+                        <button class="btn-copy" onclick="navigator.clipboard.writeText(document.getElementById('abac-policy-code').textContent); this.textContent='Copied!'; setTimeout(() => this.textContent='Copy', 1500)">Copy</button>
+                    </div>
+                    <pre><code id="abac-policy-code">/**
+ * Keycloak JavaScript Authorization Policy for Attribute-Based Access Control (ABAC)
+ * 
+ * Rules:
+ * 1. User's department MUST match the Resource's department.
+ * 2. User's clearance level MUST be greater than or equal to the Resource's classification level.
+ * 3. Level 3 (Confidential) resources can only be accessed from the "Office Network" (Environment constraint).
+ */
+
+// Helper to convert attribute values from Keycloak attribute entries or Java collections to simple JS strings.
+function getSingleValue(attr) {
+    if (!attr) return null;
+
+    // Keycloak attribute entries may expose either asString() or asString(index).
+    if (typeof attr.asString === 'function') {
+        try {
+            return attr.asString();
+        } catch (e) {
+            return attr.asString(0);
+        }
+    }
+
+    // Resource attributes are commonly java.util.List values.
+    if (typeof attr.get === 'function' && typeof attr.isEmpty === 'function') {
+        return attr.isEmpty() ? null : attr.get(0);
+    }
+
+    // Fallback for JS arrays.
+    if (Array.isArray(attr) && attr.length > 0) {
+        return attr[0];
+    }
+
+    // Final fallback for plain scalar-like objects.
+    return attr.toString();
+}
+
+function normalizeText(val) {
+    if (val === null || val === undefined) return null;
+    return val.toString().trim().toLowerCase();
+}
+
+function safeToString(value) {
+    if (value === null || value === undefined) return "None";
+    try {
+        return value.toString();
+    } catch (e) {
+        return "[unprintable]";
+    }
+}
+
+function listAttributeKeys(attrs) {
+    if (!attrs) return "[none]";
+
+    try {
+        if (typeof attrs.keySet === 'function') {
+            return attrs.keySet().toString();
+        }
+    } catch (e) {}
+
+    try {
+        if (typeof attrs.getAttributes === 'function') {
+            return attrs.getAttributes().keySet().toString();
+        }
+    } catch (e) {}
+
+    try {
+        return Object.keys(attrs).join(', ');
+    } catch (e) {
+        return "[unknown]";
+    }
+}
+
+// 1. Get the evaluation context and resource info
+var context = $evaluation.getContext();
+var identity = context.getIdentity();
+var permission = $evaluation.getPermission();
+var resource = permission.getResource();
+
+// 2. Retrieve User (Subject) Attributes
+var userAttributes = identity.getAttributes();
+var userDept = getSingleValue(userAttributes.getValue('department'));
+var userClearanceStr = getSingleValue(userAttributes.getValue('clearance_level')); // e.g., "1", "2", "3"
+
+// 3. Retrieve Resource Attributes (resource.getAttributes() returns a Map&lt;String, List&lt;String&gt;&gt;)
+var resourceAttributes = resource.getAttributes();
+var resourceDept = getSingleValue(resourceAttributes.get('department'));
+var resourceClassStr = getSingleValue(resourceAttributes.get('classification_level')); // e.g., "1", "2", "3"
+
+// 4. Retrieve Environment Attributes
+var contextAttributes = context.getAttributes();
+var networkType = getSingleValue(contextAttributes.getValue('network_location'));
+
+// Helper to parse string level as integer
+function parseLevel(valStr, defaultVal) {
+    if (!valStr) return defaultVal;
+    return parseInt(valStr, 10) || defaultVal;
+}
+
+var uLevel = parseLevel(userClearanceStr, 0);
+var rLevel = parseLevel(resourceClassStr, 1);
+var normalizedUserDept = normalizeText(userDept);
+var normalizedResourceDept = normalizeText(resourceDept);
+var normalizedNetworkType = normalizeText(networkType);
+
+// Debug logging (will show up in Keycloak server console logs)
+print("Evaluating ABAC Policy for User: " + identity.getId());
+print("User Attribute Keys: " + listAttributeKeys(userAttributes));
+print("Context Attribute Keys: " + listAttributeKeys(contextAttributes));
+print("User Dept: " + safeToString(userDept) + " (normalized: " + safeToString(normalizedUserDept) + "), Clearance: " + uLevel);
+print("Resource Dept: " + safeToString(resourceDept) + " (normalized: " + safeToString(normalizedResourceDept) + "), Classification: " + rLevel);
+print("Network Location Parameter: " + safeToString(networkType) + " (normalized: " + safeToString(normalizedNetworkType) + ")");
+
+// 5. Evaluate Rules
+var departmentMatches = false;
+if (normalizedUserDept && normalizedResourceDept) {
+    departmentMatches = (normalizedUserDept === normalizedResourceDept);
+}
+
+var clearanceIsSufficient = (uLevel >= rLevel);
+
+var environmentConstraintMet = true;
+// Rule: If resource is Level 3 (highly confidential), force office network
+if (rLevel >= 3) {
+    if (normalizedNetworkType !== "office") {
+        environmentConstraintMet = false;
+        print("Access denied: Level 3 resource requires Office Network, current network is: " + safeToString(networkType));
+    }
+}
+
+// 6. Grant or Deny Access
+if (departmentMatches && clearanceIsSufficient && environmentConstraintMet) {
+    print("ABAC Evaluation: GRANT");
+    $evaluation.grant();
+} else {
+    print("ABAC Evaluation: DENY");
+}</code></pre>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Load Mermaid JS for static diagram rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script src="./simulator-template.js"></script>
+    <script src="./simulator.js"></script>
+    <script src="./page-bootstrap.js"></script>
+</body>
+</html>

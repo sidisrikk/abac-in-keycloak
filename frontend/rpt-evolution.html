@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Evolving to RPT - Attribute-Based Access Control (ABAC) in Keycloak</title>
+    <meta name="description" content="Evolve from Decision Mode to Requesting Party Tokens (RPT) in Keycloak for self-contained permission tokens.">
+    <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="brand-section">
+                <div class="brand-logo">KC</div>
+                <div class="brand-title">ABAC Guide</div>
+            </div>
+            <ul class="nav-menu">
+                <li class="nav-item"><a href="index.html" class="nav-link" id="nav-intro">1. What is ABAC?</a></li>
+                <li class="nav-item"><a href="keycloak-authz.html" class="nav-link" id="nav-keycloakz">2. Keycloak AuthZ</a></li>
+                <li class="nav-item"><a href="abac-impl.html" class="nav-link" id="nav-abac-impl">3. Implementing ABAC</a></li>
+                <li class="nav-item"><a href="simulator.html" class="nav-link" id="nav-simulator">4. Live ABAC Simulator</a></li>
+                <li class="nav-item"><a href="hands-on-lab.html" class="nav-link" id="nav-lab">5. Hands-on Lab</a></li>
+                <li class="nav-item"><a href="rpt-evolution.html" class="nav-link active" id="nav-rpt">6. Evolving to RPT</a></li>
+                <li class="nav-item"><a href="rpt-strategies.html" class="nav-link" id="nav-strategies">7. RPT Strategies</a></li>
+                <li class="nav-item"><a href="alternative-approaches.html" class="nav-link" id="nav-alternatives">8. Alternative Approaches</a></li>
+            </ul>
+        </nav>
+
+        <!-- Main Content Panel -->
+        <main class="main-content">
+            <header>
+                <h1>Attribute-Based Access Control (ABAC) in Keycloak</h1>
+                <p class="text-secondary">Learn how to build fine-grained, dynamic, and context-aware security policies using user, resource, and environment attributes in Keycloak.</p>
+            </header>
+
+            <!-- Section 6: Evolving to RPT -->
+            <section id="rpt-evolution">
+                <h2>6. Evolving to RPT: Self-Contained Permission Tokens</h2>
+                <p>In Step 9, you used <code>response_mode=decision</code> which returns a simple <code>{"result":true}</code> or <code>403 Forbidden</code>. This works well, but it means your resource server must call Keycloak's token endpoint on <strong>every single request</strong> to get an authorization decision. The next evolution is to use <strong>Requesting Party Tokens (RPT)</strong> — a UMA 2.0 standard where Keycloak evaluates all your ABAC policies and embeds the granted permissions directly into a new JWT.</p>
+
+                <h3>Decision Mode vs RPT: What Changes?</h3>
+                <div class="grid-2">
+                    <div class="feature-card">
+                        <div class="card-icon">?</div>
+                        <h3>Decision Mode (Current)</h3>
+                        <p>Returns a simple boolean answer: <code>{"result":true}</code> or HTTP 403. Your resource server must ask Keycloak <strong>every time</strong> a user accesses a protected resource. Fast for single checks, but adds latency per-request.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="card-icon">🎫</div>
+                        <h3>RPT Mode (Evolution)</h3>
+                        <p>Returns a full <strong>JWT token</strong> with an <code>authorization</code> claim listing every resource and scope the user is permitted. Your resource server can validate this token <strong>locally</strong> — no per-request PDP call needed.</p>
+                    </div>
+                </div>
+
+                <h3>Architecture: How RPT Changes the Flow</h3>
+                <div class="mermaid">
+                    sequenceDiagram
+                        participant Client as Client / PEP
+                        participant KC as Keycloak PDP
+                        participant API as Resource Server
+
+                        Client->>KC: 1. Authenticate (get access token)
+                        KC-->>Client: Access Token (with ABAC attributes)
+                        Client->>KC: 2. Request RPT (UMA grant + permission)
+                        Note over KC: Evaluates ABAC policies<br/>against user attrs, resource attrs,<br/>and environment context
+                        KC-->>Client: RPT (JWT with embedded permissions)
+                        Client->>API: 3. Request resource with RPT
+                        Note over API: Validates RPT signature locally<br/>Checks authorization.permissions claim<br/>No call back to Keycloak needed
+                        API-->>Client: 4. Resource data
+                </div>
+
+                <div class="highlight-box tip">
+                    <strong>Key Insight:</strong> The RPT is a <strong>regular JWT</strong> signed by Keycloak. Your resource server only needs Keycloak's public key to verify it — no network round-trip to the PDP on every request. The ABAC evaluation happens once when the RPT is issued.
+                </div>
+
+                <h3>Step-by-Step: Requesting an RPT</h3>
+                <p>Using the same setup from the hands-on lab, here is how to switch from decision mode to RPT mode.</p>
+
+                <h4>1. Get an Access Token (Same as Before)</h4>
+                <div class="code-container">
+                    <div class="code-header">
+                        <span class="code-title">Authenticate Alice</span>
+                    </div>
+                    <pre><code># Get Access Token for Alice (same as Step 9)
+curl -s -d "client_id=document-service-api" \
+     -d "username=alice" \
+     -d "password=password" \
+     -d "grant_type=password" \
+     -d "scope=openid profile abac-attributes" \
+     -d "client_secret=&lt;YOUR_CLIENT_SECRET&gt;" \
+     -X POST http://localhost:8080/realms/abac-realm/protocol/openid-connect/token \
+     | jq -r '.access_token'
+
+# Store it
+ACCESS_TOKEN="&lt;paste token here&gt;"</code></pre>
+                </div>
+
+                <h4>2. Request an RPT (Remove response_mode=decision)</h4>
+                <p>The only difference from Step 9 is that you <strong>omit</strong> the <code>response_mode=decision</code> parameter. Without it, Keycloak returns a full RPT instead of a boolean.</p>
+                <div class="code-container">
+                    <div class="code-header">
+                        <span class="code-title">Request RPT for a Specific Resource</span>
+                    </div>
+                    <pre><code># Request RPT for "Secret HR Report"
+CLAIM_TOKEN=$(printf '%s' '{"network_location":["office"]}' | base64 -w0)
+
+curl -s -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+     -d "grant_type=urn:ietf:params:oauth:grant-type:uma-ticket" \
+     -d "audience=document-service-api" \
+     -d "permission=Secret HR Report" \
+     -d "claim_token=${CLAIM_TOKEN}" \
+     -d "claim_token_format=urn:ietf:params:oauth:token-type:jwt" \
+     -X POST http://localhost:8080/realms/abac-realm/protocol/openid-connect/token \
+     | jq -r '.access_token'
+
+# This returns a full JWT (the RPT), not {"result":true}</code></pre>
+                </div>
+
+                <div class="highlight-box warning">
+                    <strong>Notice:</strong> The response field is <code>access_token</code> — the RPT is returned as a new access token that <strong>replaces</strong> your original one. It contains everything the original token had, plus an <code>authorization</code> block with granted permissions.
+                </div>
+
+                <h4>3. Request RPT for ALL Permitted Resources</h4>
+                <p>You can also omit the <code>permission</code> parameter entirely. Keycloak will evaluate <strong>all</strong> resources and return permissions for every resource the user is allowed to access.</p>
+                <div class="code-container">
+                    <div class="code-header">
+                        <span class="code-title">Request RPT for All Resources</span>
+                    </div>
+                    <pre><code># Request RPT for ALL resources the user can access
+CLAIM_TOKEN=$(printf '%s' '{"network_location":["office"]}' | base64 -w0)
+
+curl -s -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+     -d "grant_type=urn:ietf:params:oauth:grant-type:uma-ticket" \
+     -d "audience=document-service-api" \
+     -d "claim_token=${CLAIM_TOKEN}" \
+     -d "claim_token_format=urn:ietf:params:oauth:token-type:jwt" \
+     -X POST http://localhost:8080/realms/abac-realm/protocol/openid-connect/token \
+     | jq -r '.access_token'</code></pre>
+                </div>
+
+                <h4>4. Decode the RPT and Inspect Permissions</h4>
+                <p>Decode the RPT JWT (using <a href="https://jwt.io" target="_blank">jwt.io</a> or the command below) and you will see the new <code>authorization</code> claim:</p>
+                <div class="code-container">
+                    <div class="code-header">
+                        <span class="code-title">Decode RPT</span>
+                    </div>
+                    <pre><code># Decode the RPT payload (middle segment of the JWT)
+echo "${RPT}" | cut -d'.' -f2 | base64 -d 2>/dev/null | jq .</code></pre>
+                </div>
+
+                <h3>What the RPT Looks Like</h3>
+                <p>The decoded RPT contains everything your original access token had, <strong>plus</strong> an <code>authorization</code> block:</p>
+                <div class="code-container">
+                    <div class="code-header">
+                        <span class="code-title">RPT Payload (Key Fields)</span>
+                    </div>
+                    <pre><code>{
+  "exp": 1780731595,
+  "iss": "http://localhost:8080/realms/abac-realm",
+  "sub": "...",
+  "azp": "document-service-api",
+  "preferred_username": "alice",
+  "department": "hr",
+  "clearance_level": "3",
+
+  "authorization": {
+    "permissions": [
+      {
+        "rsid": "a1b2c3d4-...",
+        "rsname": "Secret HR Report",
+        "scopes": ["read", "write", "delete"]
+      }
+    ]
+  }
+}</code></pre>
+                </div>
+
+                <div class="highlight-box tip">
+                    <strong>Key Fields in <code>authorization.permissions</code>:</strong>
+                    <ul style="margin-top: 0.5rem; margin-bottom: 0;">
+                        <li><code>rsid</code> — The unique ID of the resource in Keycloak</li>
+                        <li><code>rsname</code> — The human-readable name (e.g., "Secret HR Report")</li>
+                        <li><code>scopes</code> — The granted scopes (e.g., ["read", "write"]). Empty if no scopes were defined on the resource.</li>
+                    </ul>
+                </div>
+
+                <h3>How the Resource Server Uses the RPT</h3>
+                <p>Your API only needs to do two things — no Keycloak calls at runtime:</p>
+                <div class="code-container">
+                    <div class="code-header">
+                        <span class="code-title">resource-server-middleware.js (Pseudocode)</span>
+                    </div>
+                    <pre><code>// 1. Verify the RPT signature using Keycloak's public key
+//    (fetched once from the JWKS endpoint and cached)
+const decoded = jwt.verify(rptToken, keycloakPublicKey, {
+  issuer: 'http://localhost:8080/realms/abac-realm',
+  audience: 'document-service-api'
+});
+
+// 2. Check if the requested resource AND scope are in the permissions list
+const permissions = decoded.authorization?.permissions || [];
+
+function hasPermission(resourceName, requiredScope) {
+  return permissions.some(p =>
+    p.rsname === resourceName &&
+    p.scopes?.includes(requiredScope)
+  );
+}
+
+// Example: Check read access
+if (hasPermission('Secret HR Report', 'read')) {
+  // ✅ Can read
+}
+
+// Example: Check write access
+if (hasPermission('Secret HR Report', 'write')) {
+  // ✅ Can write (only managers)
+} else {
+  // ❌ 403 — user can read but not write
+  return res.status(403).json({ error: 'Write access denied' });
+}</code></pre>
+                </div>
+
+                <h3>When to Refresh the RPT</h3>
+                <p>Since the RPT is a JWT with an <code>exp</code> (expiration) claim, permissions are frozen until the token expires. Request a new RPT when:</p>
+                <ul>
+                    <li>The RPT expires (same lifetime as the access token, typically 5–15 minutes)</li>
+                    <li>The user's roles or attributes change and you need updated permissions</li>
+                    <li>You need to re-evaluate with different environment context (e.g., network changed)</li>
+                </ul>
+            </section>
+        </main>
+    </div>
+
+    <!-- Load Mermaid JS for static diagram rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script src="./simulator-template.js"></script>
+    <script src="./simulator.js"></script>
+    <script src="./page-bootstrap.js"></script>
+</body>
+</html>

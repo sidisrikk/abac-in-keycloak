@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hands-on Lab - Attribute-Based Access Control (ABAC) in Keycloak</title>
+    <meta name="description" content="A detailed hands-on lab guiding you to configure clients, users, schemas, scopes, resources, policies, and permissions in Keycloak to implement ABAC.">
+    <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="brand-section">
+                <div class="brand-logo">KC</div>
+                <div class="brand-title">ABAC Guide</div>
+            </div>
+            <ul class="nav-menu">
+                <li class="nav-item"><a href="index.html" class="nav-link" id="nav-intro">1. What is ABAC?</a></li>
+                <li class="nav-item"><a href="keycloak-authz.html" class="nav-link" id="nav-keycloakz">2. Keycloak AuthZ</a></li>
+                <li class="nav-item"><a href="abac-impl.html" class="nav-link" id="nav-abac-impl">3. Implementing ABAC</a></li>
+                <li class="nav-item"><a href="simulator.html" class="nav-link" id="nav-simulator">4. Live ABAC Simulator</a></li>
+                <li class="nav-item"><a href="hands-on-lab.html" class="nav-link active" id="nav-lab">5. Hands-on Lab</a></li>
+                <li class="nav-item"><a href="rpt-evolution.html" class="nav-link" id="nav-rpt">6. Evolving to RPT</a></li>
+                <li class="nav-item"><a href="rpt-strategies.html" class="nav-link" id="nav-strategies">7. RPT Strategies</a></li>
+                <li class="nav-item"><a href="alternative-approaches.html" class="nav-link" id="nav-alternatives">8. Alternative Approaches</a></li>
+            </ul>
+        </nav>
+
+        <!-- Main Content Panel -->
+        <main class="main-content">
+            <header>
+                <h1>Attribute-Based Access Control (ABAC) in Keycloak</h1>
+                <p class="text-secondary">Learn how to build fine-grained, dynamic, and context-aware security policies using user, resource, and environment attributes in Keycloak.</p>
+            </header>
+
+            <!-- Section 5: Hands-on Lab -->
+            <section id="hands-on-lab">
+                <h2>5. Hands-on Lab: Configure Keycloak ABAC</h2>
+                <p>Follow this detailed lab to set up a working Keycloak instance, configure ABAC parameters, and deploy a policy that matches user clearance to resource requirements.</p>
+
+                <h3>Prerequisites</h3>
+                <p>You need <a href="https://docs.docker.com/get-docker/" target="_blank">Docker</a> and <a href="https://docs.docker.com/compose/" target="_blank">Docker Compose</a> installed on your machine.</p>
+
+                <h3>Step 1: Build and Start Keycloak 26 with Pre-Bundled Scripts</h3>
+                <p>In Keycloak 26, the legacy <code>upload-scripts</code> feature is completely removed for security. JavaScript authorization policies must now be pre-packaged inside a custom provider JAR file and deployed to Keycloak's <code>/opt/keycloak/providers/</code> directory, while explicitly enabling the <code>scripts</code> feature flag.</p>
+                <p>The lab now uses a multi-stage Docker build to package the JavaScript policy into a provider JAR, and a Compose stack with PostgreSQL for persistent realm data. Review the <code>lab-code/Dockerfile</code> and <code>lab-code/docker-compose.yml</code> files provided in the lab directory:</p>
+
+                <div class="code-container">
+                    <div class="code-header">
+                        <span class="code-title">lab-code/Dockerfile</span>
+                    </div>
+                    <pre><code># Bundles policy script and META-INF descriptor into a JAR provider
+FROM alpine:latest AS builder
+RUN apk add --no-cache zip
+WORKDIR /build
+COPY abac-policy.js .
+COPY META-INF ./META-INF
+RUN zip -r abac-policy-provider.jar abac-policy.js META-INF
+
+FROM quay.io/keycloak/keycloak:26.6.2
+COPY --from=builder /build/abac-policy-provider.jar /opt/keycloak/providers/
+ENV KC_FEATURES=scripts
+RUN /opt/keycloak/bin/kc.sh build</code></pre>
+                </div>
+
+                <div class="code-container">
+                    <div class="code-header">
+                        <span class="code-title">lab-code/docker-compose.yml</span>
+                        <button class="btn-copy" onclick="navigator.clipboard.writeText(document.getElementById('compose-code').textContent); this.textContent='Copied!'; setTimeout(() => this.textContent='Copy', 1500)">Copy</button>
+                    </div>
+                    <pre><code id="compose-code">services:
+  postgres:
+    image: postgres:16
+    container_name: keycloak_abac_db
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  keycloak:
+    build: .
+    container_name: keycloak_abac_lab
+    environment:
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+      - KC_DB=postgres
+      - KC_DB_URL=jdbc:postgresql://postgres:5432/keycloak
+      - KC_DB_USERNAME=keycloak
+      - KC_DB_PASSWORD=keycloak
+      - KC_FEATURES=scripts
+      - KC_HTTP_ENABLED=true
+      - KC_HOSTNAME_STRICT=false
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+    command: start
+
+volumes:
+  postgres_data:</code></pre>
+                </div>
+
+                <p>From the <code>lab-code/</code> directory, build the custom image and start the stack:</p>
+                <div class="code-container">
+                    <pre><code>cd lab-code
+docker compose up --build -d</code></pre>
+                </div>
+
+                <div class="highlight-box warning">
+                    <strong>Persistence Note:</strong> This Compose stack uses PostgreSQL with a named Docker volume, so your realm, users, and authorization configuration survive container restarts. If you run <code>docker compose down -v</code>, the <code>postgres_data</code> volume is removed and you will need to re-create the realm, client, users, resources, and policies.
+                </div>
+
+                <h3>Step 2: Access the Admin Console and Configure Client</h3>
+                <ol>
+                    <li>Open browser to <a href="http://localhost:8080" target="_blank">http://localhost:8080</a> and log in with admin/admin.</li>
+                    <li>Create a Realm named <code>abac-realm</code>.</li>
+                    <li>Navigate to <strong>Clients</strong> and create a Client:
+                        <ul>
+                            <li>Client ID: <code>document-service-api</code></li>
+                            <li>In the <strong>Capability config</strong> section, configure:
+                                <ul>
+                                    <li>Client authentication: <strong>ON</strong> (Confidential client)</li>
+                                    <li>Authorization: <strong>ON</strong> (Enables Authorization Services)</li>
+                                    <li>Direct access grants: <strong>ON</strong> (Required for resource owner password credentials flow)</li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </li>
+                    <li>Click <strong>Save</strong>. You will now see an <strong>Authorization</strong> tab on the client details page.</li>
+                    <li>Go to the <strong>Credentials</strong> tab on the client details page and copy the value of the <strong>Client secret</strong>. You will need this client secret for the API requests in Step 9.</li>
+                </ol>
+
+                <h3>Step 3: Configure User Profile Schema for Custom Attributes</h3>
+                <p>By default, Keycloak 26 enforces a strict **User Profile Schema**. You cannot add custom attributes like <code>department</code> or <code>clearance_level</code> to a user unless they are first declared in the Realm's User Profile configuration.</p>
+                <ol>
+                    <li>In the left sidebar, navigate to <strong>Realm settings</strong>.</li>
+                    <li>Click on the <strong>User profile</strong> tab (ensure you are on the <strong>Attributes</strong> sub-tab).</li>
+                    <li>Define the <code>department</code> attribute:
+                        <ul>
+                            <li>Click <strong>Create attribute</strong>.</li>
+                            <li><strong>Attribute name:</strong> <code>department</code></li>
+                            <li><strong>Display name:</strong> <code>Department</code></li>
+                            <li>In the <strong>Permissions</strong> section, select:
+                                <ul>
+                                    <li><strong>Who can edit:</strong> <code>Admin</code> (Users should not be allowed to change their own department)</li>
+                                    <li><strong>Who can view:</strong> <code>Admin</code> and <code>User</code></li>
+                                </ul>
+                            </li>
+                            <li>Click <strong>Save</strong>.</li>
+                        </ul>
+                    </li>
+                    <li>Define the <code>clearance_level</code> attribute:
+                        <ul>
+                            <li>Click <strong>Create attribute</strong>.</li>
+                            <li><strong>Attribute name:</strong> <code>clearance_level</code></li>
+                            <li><strong>Display name:</strong> <code>Clearance Level</code></li>
+                            <li>In the <strong>Permissions</strong> section, select:
+                                <ul>
+                                    <li><strong>Who can edit:</strong> <code>Admin</code></li>
+                                    <li><strong>Who can view:</strong> <code>Admin</code> and <code>User</code></li>
+                                </ul>
+                            </li>
+                            <li>Click <strong>Save</strong>.</li>
+                        </ul>
+                    </li>
+                </ol>
+
+                <h3>Step 4: Map User Attributes into a Client Scope</h3>
+                <p>Defining custom user attributes is not enough on its own. To make those values available to tokens and authorization evaluations, add them as user attribute protocol mappers in a client scope, then assign that scope to the client.</p>
+                <ol>
+                    <li>In the left sidebar, navigate to <strong>Client scopes</strong> and click <strong>Create client scope</strong>.</li>
+                    <li>Create a scope named <code>abac-attributes</code> and save it.</li>
+                    <li>Open the new <code>abac-attributes</code> scope and go to <strong>Mappers</strong>.</li>
+                    <li>Create a mapper for <code>department</code>:
+                        <ul>
+                            <li><strong>Mapper type:</strong> <code>User Attribute</code></li>
+                            <li><strong>Name:</strong> <code>department</code></li>
+                            <li><strong>User Attribute:</strong> <code>department</code></li>
+                            <li><strong>Token Claim Name:</strong> <code>department</code></li>
+                            <li><strong>Claim JSON Type:</strong> <code>String</code></li>
+                            <li>Enable <strong>Add to access token</strong>.</li>
+                        </ul>
+                    </li>
+                    <li>Create another mapper for <code>clearance_level</code> using the same configuration pattern:
+                        <ul>
+                            <li><strong>Name:</strong> <code>clearance_level</code></li>
+                            <li><strong>User Attribute:</strong> <code>clearance_level</code></li>
+                            <li><strong>Token Claim Name:</strong> <code>clearance_level</code></li>
+                            <li><strong>Claim JSON Type:</strong> <code>String</code></li>
+                            <li>Enable <strong>Add to access token</strong>.</li>
+                        </ul>
+                    </li>
+                    <li>Go to <strong>Clients</strong> -> <code>document-service-api</code> -> <strong>Client scopes</strong> and assign <code>abac-attributes</code> as a <strong>Default</strong> client scope.
+                        <br>
+                        If you prefer to keep it optional, assign it as an optional scope and request it explicitly with <code>scope=openid profile abac-attributes</code> during login.
+                    </li>
+                </ol>
+
+                <h3>Step 5: Setup User Attributes and Profile</h3>
+                <p>Create two users to test access permissions. Due to Keycloak 26's default **User Profile** policies, basic fields must be fully completed to allow API logins without encountering "Account is not fully set up" errors.</p>
+                <ol>
+                    <li>Create user: <strong>alice</strong>
+                        <ul>
+                            <li><strong>Username:</strong> <code>alice</code></li>
+                            <li><strong>Email:</strong> <code>alice@example.com</code></li>
+                            <li><strong>First Name:</strong> <code>Alice</code></li>
+                            <li><strong>Last Name:</strong> <code>Smith</code></li>
+                            <li><strong>Email verified:</strong> Toggle **ON**</li>
+                            <li><strong>Required user actions:</strong> Ensure this field is **empty** (no actions like Update Password or Verify Email listed)</li>
+                            <li>Once the user is created, since <code>department</code> and <code>clearance_level</code> are defined in the User Profile schema, they will appear directly as custom input fields on the user details page (under the <strong>Details</strong> tab). Populate them as:
+                                <ul>
+                                    <li><strong>Department:</strong> <code>hr</code></li>
+                                    <li><strong>Clearance Level:</strong> <code>3</code></li>
+                                </ul>
+                                <em>Note: If they do not appear on the Details form, navigate to the **Attributes** tab and add them as key-value pairs.</em>
+                            </li>
+                        </ul>
+                    </li>
+                    <li>Create user: <strong>bob</strong>
+                        <ul>
+                            <li><strong>Username:</strong> <code>bob</code></li>
+                            <li><strong>Email:</strong> <code>bob@example.com</code></li>
+                            <li><strong>First Name:</strong> <code>Bob</code></li>
+                            <li><strong>Last Name:</strong> <code>Jones</code></li>
+                            <li><strong>Email verified:</strong> Toggle **ON**</li>
+                            <li><strong>Required user actions:</strong> Ensure this field is **empty**</li>
+                            <li>Configure his custom attributes on the user details page (under the <strong>Details</strong> tab):
+                                <ul>
+                                    <li><strong>Department:</strong> <code>eng</code></li>
+                                    <li><strong>Clearance Level:</strong> <code>1</code></li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </li>
+                    <li>Set password credentials for both users:
+                        <ul>
+                            <li>Go to the **Credentials** tab for each user.</li>
+                            <li>Click **Set password** (or Reset password).</li>
+                            <li>Password: <code>password</code></li>
+                            <li>Set **Temporary** to **OFF** (this is critical for direct login API).</li>
+                            <li>Click **Save** / **Set password**.</li>
+                        </ul>
+                    </li>
+                </ol>
+
+                <h3>Step 6: Define Authorization Scopes, Resources &amp; Attributes</h3>
+                <p>Authorization Scopes represent <strong>actions</strong> that can be performed on a resource (e.g., <code>read</code>, <code>write</code>, <code>delete</code>). These are separate from OAuth2 scopes like <code>openid profile</code>. We define scopes first, then create resources and associate scopes with them.</p>
+
+                <h4>6a. Create Authorization Scopes</h4>
+                <ol>
+                    <li>Go to Client: <code>document-service-api</code> -> <strong>Authorization</strong> -> <strong>Scopes</strong>.</li>
+                    <li>Click <strong>Create authorization scope</strong> and create each of these:
+                        <ul>
+                            <li>Name: <code>read</code> — Click <strong>Save</strong></li>
+                            <li>Name: <code>write</code> — Click <strong>Save</strong></li>
+                            <li>Name: <code>delete</code> — Click <strong>Save</strong></li>
+                        </ul>
+                    </li>
+                </ol>
+
+                <div class="highlight-box tip">
+                    <strong>Concept:</strong> Think of scopes as <em>verbs</em> and resources as <em>nouns</em>. Combined they express "user can <code>read</code> the <code>Secret HR Report</code>" or "user can <code>delete</code> the <code>Secret HR Report</code>". Without scopes, permissions are binary — full access or no access.
+                </div>
+
+                <h4>6b. Create a Resource with Scopes and Attributes</h4>
+                <ol>
+                    <li>Go to Client: <code>document-service-api</code> -> <strong>Authorization</strong> -> <strong>Resources</strong>.</li>
+                    <li>Create Resource:
+                        <ul>
+                            <li>Name: <code>Secret HR Report</code></li>
+                            <li>Type: <code>document</code></li>
+                            <li>URI: <code>/documents/hr/secret</code></li>
+                            <li><strong>Authorization scopes:</strong> Select <code>read</code>, <code>write</code>, and <code>delete</code></li>
+                            <li>Add Attributes: Key = <code>department</code>, Value = <code>hr</code></li>
+                            <li>Add Attributes: Key = <code>classification_level</code>, Value = <code>3</code></li>
+                        </ul>
+                    </li>
+                    <li>Click <strong>Save</strong>.</li>
+                </ol>
+
+                <h3>Step 7: Register the Pre-Bundled JavaScript Policy</h3>
+                <p>Because our custom policy has been packaged and registered in <code>lab-code/META-INF/keycloak-scripts.json</code>, Keycloak 26 makes it available in the console by default. You do not need to copy-paste code into the browser.</p>
+                <ol>
+                    <li>Go to client's <strong>Authorization</strong> -> <strong>Policies</strong> -> <strong>Create Policy</strong>.</li>
+                    <li>Look for our pre-registered policy under the dropdown list. Select **Verify Dept and Clearance ABAC Policy** (the name matches the registry entry).</li>
+                    <li>Give it a local name: <code>Verify Dept and Clearance ABAC Policy</code>.</li>
+                    <li>Click <strong>Save</strong>.</li>
+                </ol>
+
+                <h3>Step 8: Create Permission Bindings</h3>
+                <p>We now create two types of permissions that bind resources and scopes to our ABAC policy. This demonstrates the difference between resource-level and scope-level access control.</p>
+
+                <h4>8a. Resource-Based Permission (Full Access Gate)</h4>
+                <p>This permission controls whether the user can access the resource <em>at all</em>. If denied, none of the scope-based permissions matter.</p>
+                <ol>
+                    <li>Go to client's <strong>Authorization</strong> -> <strong>Permissions</strong> -> <strong>Create Permission</strong>.</li>
+                    <li>Select <strong>Resource-based Permission</strong>.</li>
+                    <li>Fill out:
+                        <ul>
+                            <li>Name: <code>Secure Document Access Permission</code></li>
+                            <li>Resources: Select <code>Secret HR Report</code></li>
+                            <li>Policies: Select <code>Verify Dept and Clearance ABAC Policy</code></li>
+                        </ul>
+                    </li>
+                    <li>Click <strong>Save</strong>.</li>
+                </ol>
+
+                <h4>8b. Scope-Based Permissions (Action-Level Control)</h4>
+                <p>Scope-based permissions control <strong>which actions</strong> a user can perform on a resource. For example, you might allow all matching users to <code>read</code>, but only managers to <code>write</code> or <code>delete</code>.</p>
+
+                <p>First, create a simple Role Policy for managers:</p>
+                <ol>
+                    <li>Go to client's <strong>Authorization</strong> -> <strong>Policies</strong> -> <strong>Create Policy</strong>.</li>
+                    <li>Select <strong>Role</strong>.</li>
+                    <li>Fill out:
+                        <ul>
+                            <li>Name: <code>Require Manager Role</code></li>
+                            <li>Realm Roles: Select <code>default-roles-abac-realm</code>, then click the <strong>X</strong> to remove it, and type/select the role you want. If you haven't created a <code>manager</code> realm role yet, create one first via <strong>Realm roles</strong> -> <strong>Create role</strong> -> Name: <code>manager</code>.</li>
+                            <li>Realm Roles: Select <code>manager</code></li>
+                        </ul>
+                    </li>
+                    <li>Click <strong>Save</strong>.</li>
+                </ol>
+
+                <p>Assign the <code>manager</code> role to Alice (so she can write/delete):</p>
+                <ol>
+                    <li>Go to <strong>Users</strong> -> <code>alice</code> -> <strong>Role mapping</strong>.</li>
+                    <li>Click <strong>Assign role</strong>, select <code>manager</code>, and click <strong>Assign</strong>.</li>
+                    <li>Do <strong>NOT</strong> assign <code>manager</code> to Bob — he will only get <code>read</code> access if his ABAC attributes match.</li>
+                </ol>
+
+                <p>Now create the scope-based permissions:</p>
+                <ol>
+                    <li>Go to client's <strong>Authorization</strong> -> <strong>Permissions</strong> -> <strong>Create Permission</strong>.</li>
+                    <li>Select <strong>Scope-based Permission</strong>.</li>
+                    <li>Create permission for <strong>read</strong> access:
+                        <ul>
+                            <li>Name: <code>Document Read Permission</code></li>
+                            <li>Resources: Select <code>Secret HR Report</code></li>
+                            <li>Scopes: Select <code>read</code></li>
+                            <li>Policies: Select <code>Verify Dept and Clearance ABAC Policy</code></li>
+                            <li>Decision strategy: <strong>Unanimous</strong></li>
+                        </ul>
+                    </li>
+                    <li>Click <strong>Save</strong>.</li>
+                    <li>Create another scope-based permission for <strong>write</strong> access:
+                        <ul>
+                            <li>Name: <code>Document Write Permission</code></li>
+                            <li>Resources: Select <code>Secret HR Report</code></li>
+                            <li>Scopes: Select <code>write</code></li>
+                            <li>Policies: Select <strong>both</strong> <code>Verify Dept and Clearance ABAC Policy</code> <strong>AND</strong> <code>Require Manager Role</code></li>
+                            <li>Decision strategy: <strong>Unanimous</strong> (both policies must pass)</li>
+                        </ul>
+                    </li>
+                    <li>Click <strong>Save</strong>.</li>
+                    <li>Create another for <strong>delete</strong> access:
+                        <ul>
+                            <li>Name: <code>Document Delete Permission</code></li>
+                            <li>Resources: Select <code>Secret HR Report</code></li>
+                            <li>Scopes: Select <code>delete</code></li>
+                            <li>Policies: Select <strong>both</strong> <code>Verify Dept and Clearance ABAC Policy</code> <strong>AND</strong> <code>Require Manager Role</code></li>
+                            <li>Decision strategy: <strong>Unanimous</strong></li>
+                        </ul>
+                    </li>
+                    <li>Click <strong>Save</strong>.</li>
+                </ol>
+
+                <div class="highlight-box tip">
+                    <strong>What this achieves:</strong>
+                    <ul style="margin-top: 0.5rem; margin-bottom: 0;">
+                        <li><strong>Alice</strong> (HR, Clearance 3, Manager role) → gets <code>read</code>, <code>write</code>, <code>delete</code> scopes</li>
+                        <li><strong>Bob</strong> (Eng, Clearance 1, no Manager role) → gets <strong>denied entirely</strong> (ABAC attributes don't match)</li>
+                        <li>A future HR user with Clearance 3 but <strong>no</strong> Manager role → gets only <code>read</code> scope</li>
+                    </ul>
+                </div>
+
+                <h3>Step 9: Testing the Policy Execution</h3>
+                <p>You can verify access rights using the Keycloak Authorization Endpoint. First obtain an access token that carries the mapped user attributes, then request an authorization decision for the protected resource.</p>
+
+                <h4>1. Authenticate Alice (Department: HR, Clearance: 3)</h4>
+                <div class="code-container">
+                    <pre><code># Get Access Token for Alice
+curl -d "client_id=document-service-api" \
+     -d "username=alice" \
+     -d "password=password" \
+     -d "grant_type=password" \
+     -d "scope=openid profile abac-attributes" \
+     -d "client_secret=&lt;YOUR_CLIENT_SECRET&gt;" \
+     -X POST http://localhost:8080/realms/abac-realm/protocol/openid-connect/token</code></pre>
+                </div>
+                <p>If you assigned <code>abac-attributes</code> as a default client scope in Step 4, the explicit <code>scope</code> line is optional. Keep it if you want the request to be unambiguous. Before moving on, decode the token and confirm it includes <code>department</code> and <code>clearance_level</code>.</p>
+
+                <h4>2. Query keycloak for Resource Authorization Decisions</h4>
+                <div class="code-container">
+                    <pre><code># Alice requests access to "Secret HR Report" (Clearance 3 required, Dept HR required)
+# Push runtime environment claims through claim_token. Raw form fields like
+# network_location=office are not exposed to JavaScript policies.
+CLAIM_TOKEN=$(printf '%s' '{"network_location":["office"]}' | base64 -w0)
+
+curl -H "Authorization: Bearer &lt;ALICE_ACCESS_TOKEN&gt;" \
+     -d "grant_type=urn:ietf:params:oauth:grant-type:uma-ticket" \
+     -d "audience=document-service-api" \
+     -d "response_mode=decision" \
+     -d "permission=Secret HR Report" \
+     -d "claim_token=${CLAIM_TOKEN}" \
+     -d "claim_token_format=urn:ietf:params:oauth:token-type:jwt" \
+     -X POST http://localhost:8080/realms/abac-realm/protocol/openid-connect/token</code></pre>
+                </div>
+                <p>If Keycloak exposes the mapped user claims and the pushed runtime claim correctly, Alice should receive <code>{"result":true}</code>. If access is denied, inspect the Keycloak container logs because the bundled policy now prints the user attribute keys, context attribute keys, and normalized values it actually evaluated.</p>
+
+                <h4>3. Repeat with Bob (Department: Eng, Clearance: 1)</h4>
+                <p>When Bob requests access to the Secret HR Report, Keycloak's PDP should return <code>403 Forbidden</code> because his department does not match and his clearance is insufficient.</p>
+                <p>If you need to troubleshoot the evaluation, inspect the server logs with <code>docker compose logs -f keycloak</code> from the <code>lab-code/</code> directory. The bundled policy logs lines such as <code>User Attribute Keys</code>, <code>Context Attribute Keys</code>, and the normalized department/network values to show what Keycloak actually made available during authorization.</p>
+            </section>
+        </main>
+    </div>
+
+    <!-- Load Mermaid JS for static diagram rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script src="./simulator-template.js"></script>
+    <script src="./simulator.js"></script>
+    <script src="./page-bootstrap.js"></script>
+</body>
+</html>
