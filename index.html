@@ -22,6 +22,7 @@
                 <li class="nav-item"><a href="#simulator" class="nav-link" id="nav-simulator">4. Live ABAC Simulator</a></li>
                 <li class="nav-item"><a href="#hands-on-lab" class="nav-link" id="nav-lab">5. Hands-on Lab</a></li>
                 <li class="nav-item"><a href="#rpt-evolution" class="nav-link" id="nav-rpt">6. Evolving to RPT</a></li>
+                <li class="nav-item"><a href="#rpt-strategies" class="nav-link" id="nav-strategies">7. RPT Strategies</a></li>
             </ul>
         </nav>
 
@@ -84,6 +85,13 @@
             <section id="keycloak-authz">
                 <h2>2. Keycloak Authorization Services</h2>
                 <p>Keycloak supports fine-grained authorization policies under its <strong>Authorization Services</strong>. This is distinct from simple client scopes and role claims. It allows you to build a true centralized PDP.</p>
+
+                <div class="highlight-box tip">
+                    <strong>Key concept:</strong> Think of Keycloak Authorization Services as an <strong>authorization layer</strong> that sits on top of authentication. Authentication answers <em>"who is the user?"</em> while the auth service answers <em>"can this authenticated user perform this action on this protected thing under these conditions?"</em>
+                </div>
+
+                <h3>How the Auth Service Works</h3>
+                <p>In practice, your API or application is registered in Keycloak as a <strong>resource server</strong>. That resource server sends authorization requests to Keycloak, and Keycloak evaluates the request by combining protected resources, allowed scopes, decision policies, and the permission objects that bind them together.</p>
                 
                 <h3>Key Components:</h3>
                 <ul>
@@ -99,6 +107,37 @@
                         Permission[Permission] --> Resource[Resource: /documents/*]
                         Permission --> Scope[Scope: write]
                         Permission --> Policy[Policy: Match Department JS]
+                </div>
+
+                <h3>The Four Pillars: Resource, Scope, Policy, Permission</h3>
+                <p>These four concepts are the core modeling units inside Keycloak Authorization Services. If they are designed cleanly, ABAC and other fine-grained models become much easier to reason about.</p>
+
+                <div class="grid-2">
+                    <div class="feature-card">
+                        <div class="card-icon">1</div>
+                        <h3>Resource</h3>
+                        <p>A <strong>resource</strong> is the thing being protected: an API endpoint, document, invoice, report, or business object. In Keycloak, resources can also carry attributes like <code>ownerDepartment</code>, <code>region</code>, or <code>classification</code>.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="card-icon">2</div>
+                        <h3>Scope</h3>
+                        <p>A <strong>scope</strong> is the action requested on the resource, such as <code>read</code>, <code>create</code>, <code>approve</code>, or <code>delete</code>. Scopes keep actions separate from the resource itself.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="card-icon">3</div>
+                        <h3>Policy</h3>
+                        <p>A <strong>policy</strong> defines the rule used to make the decision. It can evaluate roles, groups, user attributes, resource attributes, time windows, networks, or JavaScript logic for dynamic ABAC checks.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="card-icon">4</div>
+                        <h3>Permission</h3>
+                        <p>A <strong>permission</strong> is the binding layer. It connects one or more resources and scopes to one or more policies, telling Keycloak exactly <em>when</em> access should be granted.</p>
+                    </div>
+                </div>
+
+                <div class="highlight-box">
+                    <strong>Simple mental model:</strong> <code>Permission = Resource + Scope + Policy</code><br>
+                    Example: Allow <code>read</code> on <code>employee-record</code> only when the policy confirms the user's department and clearance match the resource requirements.
                 </div>
             </section>
 
@@ -141,231 +180,7 @@ if (userDept === resourceDept) {
             <section id="simulator">
                 <h2>4. Live Interactive ABAC Simulator</h2>
                 <p>Explore how Keycloak evaluates access dynamically. Adjust the Subject, Resource, and Environment attributes below, select which policy rules are active, and see the real-time sequence flow and decision outcome.</p>
-
-                <div class="simulator-layout">
-                    <!-- Control Panel (Left) -->
-                    <div class="sim-controls">
-                        <!-- Subject Attributes -->
-                        <div>
-                            <div class="sim-section-title">Subject (User) Attributes</div>
-                            <div class="sim-group" style="margin-bottom: 0.75rem;">
-                                <label for="sub-role">Role</label>
-                                <select id="sub-role" class="sim-select">
-                                    <option value="employee">Employee</option>
-                                    <option value="manager">Manager</option>
-                                </select>
-                            </div>
-                            <div class="sim-group" style="margin-bottom: 0.75rem;">
-                                <label for="sub-dept">Department</label>
-                                <select id="sub-dept" class="sim-select">
-                                    <option value="hr">HR</option>
-                                    <option value="eng">Engineering</option>
-                                    <option value="finance">Finance</option>
-                                </select>
-                            </div>
-                            <div class="sim-group">
-                                <label for="sub-clearance">Clearance Level</label>
-                                <select id="sub-clearance" class="sim-select">
-                                    <option value="1">L1 (Standard)</option>
-                                    <option value="2" selected>L2 (Confidential)</option>
-                                    <option value="3">L3 (Highly Confidential)</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <!-- Resource Attributes -->
-                        <div>
-                            <div class="sim-section-title">Resource Attributes</div>
-                            <div class="sim-group" style="margin-bottom: 0.75rem;">
-                                <label for="res-type">Type</label>
-                                <select id="res-type" class="sim-select">
-                                    <option value="document">Document</option>
-                                    <option value="server">Server</option>
-                                </select>
-                            </div>
-                            <div class="sim-group" style="margin-bottom: 0.75rem;">
-                                <label for="res-dept">Owner Department</label>
-                                <select id="res-dept" class="sim-select">
-                                    <option value="hr">HR</option>
-                                    <option value="eng">Engineering</option>
-                                    <option value="finance">Finance</option>
-                                </select>
-                            </div>
-                            <div class="sim-group">
-                                <label for="res-classification">Required Classification</label>
-                                <select id="res-classification" class="sim-select">
-                                    <option value="1">L1 (Public)</option>
-                                    <option value="2" selected>L2 (Confidential)</option>
-                                    <option value="3">L3 (Secret)</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <!-- Environment Attributes -->
-                        <div>
-                            <div class="sim-section-title">Environment Context</div>
-                            <div class="sim-group" style="margin-bottom: 0.75rem;">
-                                <label for="env-network">Network Location</label>
-                                <select id="env-network" class="sim-select">
-                                    <option value="office">Office Network (Secure)</option>
-                                    <option value="public">Public Internet (Insecure)</option>
-                                </select>
-                            </div>
-                            <div class="sim-group">
-                                <label for="env-time">Time of Access</label>
-                                <select id="env-time" class="sim-select">
-                                    <option value="working">Standard Working Hours</option>
-                                    <option value="offhours">Off-hours / Weekend</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <!-- Rule Selector -->
-                        <div>
-                            <div class="sim-section-title">Active Policy Rules</div>
-                            <div class="rule-toggle-list">
-                                <div class="rule-toggle-item">
-                                    <span>Dept Match Rule</span>
-                                    <label class="switch">
-                                        <input type="checkbox" id="rule-dept" checked>
-                                        <span class="slider"></span>
-                                    </label>
-                                </div>
-                                <div class="rule-toggle-item">
-                                    <span>Clearance Check</span>
-                                    <label class="switch">
-                                        <input type="checkbox" id="rule-clearance" checked>
-                                        <span class="slider"></span>
-                                    </label>
-                                </div>
-                                <div class="rule-toggle-item">
-                                    <span>L3 Office Network</span>
-                                    <label class="switch">
-                                        <input type="checkbox" id="rule-network" checked>
-                                        <span class="slider"></span>
-                                    </label>
-                                </div>
-                                <div class="rule-toggle-item">
-                                    <span>Off-hours Manager</span>
-                                    <label class="switch">
-                                        <input type="checkbox" id="rule-time" checked>
-                                        <span class="slider"></span>
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-
-                        <button id="btn-evaluate" class="btn-primary">Re-Run Animation</button>
-                    </div>
-
-                    <!-- Visual Canvas & Live Log (Right) -->
-                    <div class="sim-canvas">
-                        <!-- SVG Animation Container -->
-                        <div class="svg-container">
-                            <svg viewBox="0 0 560 300">
-                                <defs>
-                                    <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                                        <path d="M 0 0 L 10 5 L 0 10 z" fill="#374151" />
-                                    </marker>
-                                    <marker id="arrow-active" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                                        <path d="M 0 0 L 10 5 L 0 10 z" fill="#6366f1" />
-                                    </marker>
-                                    <marker id="arrow-success" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                                        <path d="M 0 0 L 10 5 L 0 10 z" fill="#10b981" />
-                                    </marker>
-                                    <marker id="arrow-fail" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                                        <path d="M 0 0 L 10 5 L 0 10 z" fill="#ef4444" />
-                                    </marker>
-                                </defs>
-
-                                <!-- Node Connections -->
-                                <!-- PEP -> PDP -->
-                                <path id="path-pep-pdp" d="M 120 110 L 230 110" fill="none" class="flow-path" marker-end="url(#arrow-active)" />
-                                <!-- PDP -> PEP -->
-                                <path id="path-pdp-pep" d="M 230 130 L 120 130" fill="none" class="flow-path" marker-end="url(#arrow-active)" />
-
-                                <!-- PDP -> PIP -->
-                                <path id="path-pdp-pip" d="M 270 165 L 270 205" fill="none" class="flow-path" marker-end="url(#arrow-active)" />
-                                <!-- PIP -> PDP -->
-                                <path id="path-pip-pdp" d="M 290 205 L 290 165" fill="none" class="flow-path" marker-end="url(#arrow-active)" />
-
-                                <!-- PDP -> PAP -->
-                                <path id="path-pdp-pap" d="M 325 110 L 435 110" fill="none" class="flow-path" marker-end="url(#arrow-active)" />
-                                <!-- PAP -> PDP -->
-                                <path id="path-pap-pdp" d="M 435 130 L 325 130" fill="none" class="flow-path" marker-end="url(#arrow-active)" />
-
-                                <!-- Node PEP -->
-                                <g id="node-pep">
-                                    <circle cx="80" cy="120" r="38" class="node-circle" />
-                                    <text x="80" y="118" class="node-text">PEP</text>
-                                    <text x="80" y="132" class="node-subtext">(App / Client)</text>
-                                </g>
-
-                                <!-- Node PDP -->
-                                <g id="node-pdp">
-                                    <circle cx="280" cy="120" r="43" class="node-circle" />
-                                    <text x="280" y="118" class="node-text">PDP</text>
-                                    <text x="280" y="132" class="node-subtext">(Keycloak Engine)</text>
-                                </g>
-
-                                <!-- Node PAP -->
-                                <g id="node-pap">
-                                    <circle cx="480" cy="120" r="38" class="node-circle" />
-                                    <text x="480" y="118" class="node-text">PAP</text>
-                                    <text x="480" y="132" class="node-subtext">(Admin Policies)</text>
-                                </g>
-
-                                <!-- Node PIP -->
-                                <g id="node-pip">
-                                    <circle cx="280" cy="245" r="38" class="node-circle" />
-                                    <text x="280" y="243" class="node-text">PIP</text>
-                                    <text x="280" y="257" class="node-subtext">(User / Resource DB)</text>
-                                </g>
-                            </svg>
-                        </div>
-
-                        <!-- Decision Panel -->
-                        <div class="decision-panel">
-                            <!-- Output Decision Card -->
-                            <div id="decision-card" class="decision-box grant">
-                                <h4>Decision</h4>
-                                <span id="decision-text" class="decision-status">GRANT</span>
-                                <p id="decision-desc">All attributes matched.</p>
-                            </div>
-
-                            <!-- Rule checklist breakdown -->
-                            <div class="rule-check-panel">
-                                <div class="rule-check-row">
-                                    <span class="rule-name">Department Matching:</span>
-                                    <span id="badge-dept" class="rule-badge passed">PASSED</span>
-                                </div>
-                                <div class="rule-check-row">
-                                    <span class="rule-name">Clearance Level Suitability:</span>
-                                    <span id="badge-clearance" class="rule-badge passed">PASSED</span>
-                                </div>
-                                <div class="rule-check-row">
-                                    <span class="rule-name">Level-3 Environment Security:</span>
-                                    <span id="badge-network" class="rule-badge passed">PASSED</span>
-                                </div>
-                                <div class="rule-check-row">
-                                    <span class="rule-name">Off-hours Manager Exception:</span>
-                                    <span id="badge-time" class="rule-badge passed">PASSED</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Simulated console logs -->
-                        <div class="console-panel">
-                            <div class="console-header">
-                                <span>PDP ENGINE EVALUATION CONSOLE</span>
-                                <span>LOG_LEVEL: DEBUG</span>
-                            </div>
-                            <div id="simulator-console" class="console-body">
-                                <!-- Dynamically loaded logs -->
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <div id="simulator-root"></div>
             </section>
 
             <!-- Section 5: Hands-on Lab -->
@@ -580,8 +395,26 @@ docker compose up --build -d</code></pre>
                     </li>
                 </ol>
 
-                <h3>Step 6: Define Authorization Resources & Attributes</h3>
-                <p>In Keycloak, we must define protected resources and map attributes to them.</p>
+                <h3>Step 6: Define Authorization Scopes, Resources &amp; Attributes</h3>
+                <p>Authorization Scopes represent <strong>actions</strong> that can be performed on a resource (e.g., <code>read</code>, <code>write</code>, <code>delete</code>). These are separate from OAuth2 scopes like <code>openid profile</code>. We define scopes first, then create resources and associate scopes with them.</p>
+
+                <h4>6a. Create Authorization Scopes</h4>
+                <ol>
+                    <li>Go to Client: <code>document-service-api</code> -> <strong>Authorization</strong> -> <strong>Scopes</strong>.</li>
+                    <li>Click <strong>Create authorization scope</strong> and create each of these:
+                        <ul>
+                            <li>Name: <code>read</code> — Click <strong>Save</strong></li>
+                            <li>Name: <code>write</code> — Click <strong>Save</strong></li>
+                            <li>Name: <code>delete</code> — Click <strong>Save</strong></li>
+                        </ul>
+                    </li>
+                </ol>
+
+                <div class="highlight-box tip">
+                    <strong>Concept:</strong> Think of scopes as <em>verbs</em> and resources as <em>nouns</em>. Combined they express "user can <code>read</code> the <code>Secret HR Report</code>" or "user can <code>delete</code> the <code>Secret HR Report</code>". Without scopes, permissions are binary — full access or no access.
+                </div>
+
+                <h4>6b. Create a Resource with Scopes and Attributes</h4>
                 <ol>
                     <li>Go to Client: <code>document-service-api</code> -> <strong>Authorization</strong> -> <strong>Resources</strong>.</li>
                     <li>Create Resource:
@@ -589,6 +422,7 @@ docker compose up --build -d</code></pre>
                             <li>Name: <code>Secret HR Report</code></li>
                             <li>Type: <code>document</code></li>
                             <li>URI: <code>/documents/hr/secret</code></li>
+                            <li><strong>Authorization scopes:</strong> Select <code>read</code>, <code>write</code>, and <code>delete</code></li>
                             <li>Add Attributes: Key = <code>department</code>, Value = <code>hr</code></li>
                             <li>Add Attributes: Key = <code>classification_level</code>, Value = <code>3</code></li>
                         </ul>
@@ -605,7 +439,11 @@ docker compose up --build -d</code></pre>
                     <li>Click <strong>Save</strong>.</li>
                 </ol>
 
-                <h3>Step 8: Create the Permission Binding</h3>
+                <h3>Step 8: Create Permission Bindings</h3>
+                <p>We now create two types of permissions that bind resources and scopes to our ABAC policy. This demonstrates the difference between resource-level and scope-level access control.</p>
+
+                <h4>8a. Resource-Based Permission (Full Access Gate)</h4>
+                <p>This permission controls whether the user can access the resource <em>at all</em>. If denied, none of the scope-based permissions matter.</p>
                 <ol>
                     <li>Go to client's <strong>Authorization</strong> -> <strong>Permissions</strong> -> <strong>Create Permission</strong>.</li>
                     <li>Select <strong>Resource-based Permission</strong>.</li>
@@ -618,6 +456,75 @@ docker compose up --build -d</code></pre>
                     </li>
                     <li>Click <strong>Save</strong>.</li>
                 </ol>
+
+                <h4>8b. Scope-Based Permissions (Action-Level Control)</h4>
+                <p>Scope-based permissions control <strong>which actions</strong> a user can perform on a resource. For example, you might allow all matching users to <code>read</code>, but only managers to <code>write</code> or <code>delete</code>.</p>
+
+                <p>First, create a simple Role Policy for managers:</p>
+                <ol>
+                    <li>Go to client's <strong>Authorization</strong> -> <strong>Policies</strong> -> <strong>Create Policy</strong>.</li>
+                    <li>Select <strong>Role</strong>.</li>
+                    <li>Fill out:
+                        <ul>
+                            <li>Name: <code>Require Manager Role</code></li>
+                            <li>Realm Roles: Select <code>default-roles-abac-realm</code>, then click the <strong>X</strong> to remove it, and type/select the role you want. If you haven't created a <code>manager</code> realm role yet, create one first via <strong>Realm roles</strong> -> <strong>Create role</strong> -> Name: <code>manager</code>.</li>
+                            <li>Realm Roles: Select <code>manager</code></li>
+                        </ul>
+                    </li>
+                    <li>Click <strong>Save</strong>.</li>
+                </ol>
+
+                <p>Assign the <code>manager</code> role to Alice (so she can write/delete):</p>
+                <ol>
+                    <li>Go to <strong>Users</strong> -> <code>alice</code> -> <strong>Role mapping</strong>.</li>
+                    <li>Click <strong>Assign role</strong>, select <code>manager</code>, and click <strong>Assign</strong>.</li>
+                    <li>Do <strong>NOT</strong> assign <code>manager</code> to Bob — he will only get <code>read</code> access if his ABAC attributes match.</li>
+                </ol>
+
+                <p>Now create the scope-based permissions:</p>
+                <ol>
+                    <li>Go to client's <strong>Authorization</strong> -> <strong>Permissions</strong> -> <strong>Create Permission</strong>.</li>
+                    <li>Select <strong>Scope-based Permission</strong>.</li>
+                    <li>Create permission for <strong>read</strong> access:
+                        <ul>
+                            <li>Name: <code>Document Read Permission</code></li>
+                            <li>Resources: Select <code>Secret HR Report</code></li>
+                            <li>Scopes: Select <code>read</code></li>
+                            <li>Policies: Select <code>Verify Dept and Clearance ABAC Policy</code></li>
+                            <li>Decision strategy: <strong>Unanimous</strong></li>
+                        </ul>
+                    </li>
+                    <li>Click <strong>Save</strong>.</li>
+                    <li>Create another scope-based permission for <strong>write</strong> access:
+                        <ul>
+                            <li>Name: <code>Document Write Permission</code></li>
+                            <li>Resources: Select <code>Secret HR Report</code></li>
+                            <li>Scopes: Select <code>write</code></li>
+                            <li>Policies: Select <strong>both</strong> <code>Verify Dept and Clearance ABAC Policy</code> <strong>AND</strong> <code>Require Manager Role</code></li>
+                            <li>Decision strategy: <strong>Unanimous</strong> (both policies must pass)</li>
+                        </ul>
+                    </li>
+                    <li>Click <strong>Save</strong>.</li>
+                    <li>Create another for <strong>delete</strong> access:
+                        <ul>
+                            <li>Name: <code>Document Delete Permission</code></li>
+                            <li>Resources: Select <code>Secret HR Report</code></li>
+                            <li>Scopes: Select <code>delete</code></li>
+                            <li>Policies: Select <strong>both</strong> <code>Verify Dept and Clearance ABAC Policy</code> <strong>AND</strong> <code>Require Manager Role</code></li>
+                            <li>Decision strategy: <strong>Unanimous</strong></li>
+                        </ul>
+                    </li>
+                    <li>Click <strong>Save</strong>.</li>
+                </ol>
+
+                <div class="highlight-box tip">
+                    <strong>What this achieves:</strong>
+                    <ul style="margin-top: 0.5rem; margin-bottom: 0;">
+                        <li><strong>Alice</strong> (HR, Clearance 3, Manager role) → gets <code>read</code>, <code>write</code>, <code>delete</code> scopes</li>
+                        <li><strong>Bob</strong> (Eng, Clearance 1, no Manager role) → gets <strong>denied entirely</strong> (ABAC attributes don't match)</li>
+                        <li>A future HR user with Clearance 3 but <strong>no</strong> Manager role → gets only <code>read</code> scope</li>
+                    </ul>
+                </div>
 
                 <h3>Step 9: Testing the Policy Execution</h3>
                 <p>You can verify access rights using the Keycloak Authorization Endpoint. First obtain an access token that carries the mapped user attributes, then request an authorization decision for the protected resource.</p>
@@ -793,7 +700,7 @@ echo "${RPT}" | cut -d'.' -f2 | base64 -d 2>/dev/null | jq .</code></pre>
       {
         "rsid": "a1b2c3d4-...",
         "rsname": "Secret HR Report",
-        "scopes": []
+        "scopes": ["read", "write", "delete"]
       }
     ]
   }
@@ -822,95 +729,207 @@ const decoded = jwt.verify(rptToken, keycloakPublicKey, {
   audience: 'document-service-api'
 });
 
-// 2. Check if the requested resource is in the permissions list
+// 2. Check if the requested resource AND scope are in the permissions list
 const permissions = decoded.authorization?.permissions || [];
-const hasAccess = permissions.some(
-  p => p.rsname === 'Secret HR Report'
-);
 
-if (hasAccess) {
-  // ✅ Grant access — no call to Keycloak needed
-  return next();
+function hasPermission(resourceName, requiredScope) {
+  return permissions.some(p =>
+    p.rsname === resourceName &&
+    p.scopes?.includes(requiredScope)
+  );
+}
+
+// Example: Check read access
+if (hasPermission('Secret HR Report', 'read')) {
+  // ✅ Can read
+}
+
+// Example: Check write access
+if (hasPermission('Secret HR Report', 'write')) {
+  // ✅ Can write (only managers)
 } else {
-  // ❌ Deny
-  return res.status(403).json({ error: 'Forbidden' });
+  // ❌ 403 — user can read but not write
+  return res.status(403).json({ error: 'Write access denied' });
 }</code></pre>
                 </div>
 
                 <h3>When to Refresh the RPT</h3>
-                <p>Since the RPT is a JWT with an <code>exp</code> (expiration) claim, permissions are frozen until the token expires. You should request a new RPT when:</p>
+                <p>Since the RPT is a JWT with an <code>exp</code> (expiration) claim, permissions are frozen until the token expires. Request a new RPT when:</p>
                 <ul>
-                    <li>The RPT expires (same lifetime as the access token)</li>
-                    <li>The user's role or attributes change and you need updated permissions</li>
+                    <li>The RPT expires (same lifetime as the access token, typically 5–15 minutes)</li>
+                    <li>The user's roles or attributes change and you need updated permissions</li>
                     <li>You need to re-evaluate with different environment context (e.g., network changed)</li>
                 </ul>
+            </section>
+
+            <!-- Section 7: RPT Request Strategies -->
+            <section id="rpt-strategies">
+                <h2>7. RPT Request Strategies: One Call vs Per-Resource</h2>
+                <p>A common question when using RPTs: should you request permissions for <strong>all resources at once</strong>, or <strong>one resource at a time</strong>? The answer depends on your application's scale and requirements.</p>
+
+                <h3>Strategy A: All Resources at Once (Recommended for Most Apps)</h3>
+                <p>Omit the <code>permission</code> parameter entirely — Keycloak evaluates <strong>every</strong> resource and returns all permissions the user is granted:</p>
                 <div class="code-container">
                     <div class="code-header">
-                        <span class="code-title">Upgrade an Existing RPT</span>
+                        <span class="code-title">Request RPT for All Resources</span>
                     </div>
-                    <pre><code># You can submit an existing RPT to get an upgraded version
-# with additional permissions appended
-curl -s -H "Authorization: Bearer ${EXISTING_RPT}" \
+                    <pre><code># Single call → RPT with ALL permitted resources and scopes
+curl -s -H "Authorization: Bearer ${ACCESS_TOKEN}" \
      -d "grant_type=urn:ietf:params:oauth:grant-type:uma-ticket" \
      -d "audience=document-service-api" \
-     -d "permission=Another Resource" \
      -X POST http://localhost:8080/realms/abac-realm/protocol/openid-connect/token \
-     | jq -r '.access_token'
-
-# The new RPT contains permissions from BOTH the old RPT
-# and the newly requested resource (if permitted)</code></pre>
+     | jq -r '.access_token'</code></pre>
+                </div>
+                <p>The resulting RPT contains every resource Alice can access:</p>
+                <div class="code-container">
+                    <div class="code-header">
+                        <span class="code-title">RPT with All Permissions (Alice)</span>
+                    </div>
+                    <pre><code>"authorization": {
+  "permissions": [
+    {
+      "rsname": "Secret HR Report",
+      "scopes": ["read", "write", "delete"]
+    },
+    {
+      "rsname": "HR Handbook",
+      "scopes": ["read", "write"]
+    },
+    {
+      "rsname": "Company Newsletter",
+      "scopes": ["read"]
+    }
+  ]
+}</code></pre>
                 </div>
 
-                <h3>Trade-off Summary: Decision Mode vs RPT</h3>
+                <div class="highlight-box tip">
+                    <strong>This is the recommended approach</strong> for apps with a manageable number of resources (under ~50). One authentication call + one RPT call = done. The token carries all permissions, and your resource server validates locally with zero Keycloak round-trips.
+                </div>
+
+                <h3>Strategy B: Per-Resource RPT (For Large-Scale Systems)</h3>
+                <p>Specify the <code>permission</code> parameter to request access for a <strong>specific resource only</strong>. This is useful when requesting all resources would be impractical.</p>
+                <div class="code-container">
+                    <div class="code-header">
+                        <span class="code-title">Request RPT for One Resource</span>
+                    </div>
+                    <pre><code># Only evaluate permissions for the resource the user is accessing
+curl -s -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+     -d "grant_type=urn:ietf:params:oauth:grant-type:uma-ticket" \
+     -d "audience=document-service-api" \
+     -d "permission=Secret HR Report" \
+     -X POST http://localhost:8080/realms/abac-realm/protocol/openid-connect/token \
+     | jq -r '.access_token'</code></pre>
+                </div>
+
+                <h4>When Per-Resource Is Necessary</h4>
+
+                <div class="grid-2">
+                    <div class="feature-card">
+                        <div class="card-icon">📦</div>
+                        <h3>Token Size Limits</h3>
+                        <p>An app with 5,000 documents would generate an RPT with 5,000 permission entries. This token could exceed <strong>50KB+</strong> — too large for HTTP headers (most servers cap at 8–16KB). Per-resource RPTs stay small and focused.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="card-icon">🌐</div>
+                        <h3>Different Context Per Resource</h3>
+                        <p>The <code>claim_token</code> for environment context is sent <strong>once per RPT request</strong>. If Resource A needs <code>network_location=office</code> and Resource B needs <code>network_location=branch-tokyo</code>, you need separate requests with different context.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="card-icon">⏱️</div>
+                        <h3>Lazy Evaluation (Performance)</h3>
+                        <p>A dashboard listing 200 documents where users typically open 2–3. Evaluating all 200 policies at login adds latency. Instead, request permissions per-document when the user clicks — instant login, tiny per-click cost.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="card-icon">🔒</div>
+                        <h3>Principle of Least Privilege</h3>
+                        <p>If a token is intercepted, a per-resource RPT reveals access to <strong>1 resource</strong>. An all-at-once RPT reveals the user's <strong>entire permission map</strong>. Security-sensitive systems prefer minimal exposure.</p>
+                    </div>
+                </div>
+
+                <h3>Strategy C: Hybrid — RPT Upgrade (Best of Both)</h3>
+                <p>Keycloak supports <strong>appending permissions</strong> to an existing RPT. Start with common resources at login, then upgrade the token when the user accesses additional resources:</p>
+                <div class="code-container">
+                    <div class="code-header">
+                        <span class="code-title">Hybrid RPT Upgrade Flow</span>
+                    </div>
+                    <pre><code># Step 1: Login → get RPT with commonly-accessed resources
+RPT=$(curl -s -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+     -d "grant_type=urn:ietf:params:oauth:grant-type:uma-ticket" \
+     -d "audience=document-service-api" \
+     -d "permission=Dashboard" \
+     -d "permission=User Profile" \
+     -X POST http://localhost:8080/realms/abac-realm/protocol/openid-connect/token \
+     | jq -r '.access_token')
+
+# RPT now contains: Dashboard + User Profile permissions
+
+# Step 2: User clicks on a specific document → upgrade the RPT
+UPGRADED_RPT=$(curl -s -H "Authorization: Bearer ${RPT}" \
+     -d "grant_type=urn:ietf:params:oauth:grant-type:uma-ticket" \
+     -d "audience=document-service-api" \
+     -d "permission=Secret HR Report" \
+     -X POST http://localhost:8080/realms/abac-realm/protocol/openid-connect/token \
+     | jq -r '.access_token')
+
+# UPGRADED_RPT now contains: Dashboard + User Profile + Secret HR Report
+# The old permissions are preserved and the new one is appended</code></pre>
+                </div>
+
+                <div class="highlight-box tip">
+                    <strong>Key Detail:</strong> When you submit an existing RPT as the Bearer token in a new UMA request, Keycloak <strong>merges</strong> the old permissions with the newly evaluated ones. You get a single token that grows incrementally as the user navigates your application.
+                </div>
+
+                <h3>Decision Guide: Which Strategy to Use</h3>
                 <table style="width:100%; border-collapse: collapse; margin: 1.5rem 0;">
                     <thead>
                         <tr style="border-bottom: 2px solid #374151;">
-                            <th style="text-align:left; padding: 0.75rem; color: #a5b4fc;">Aspect</th>
-                            <th style="text-align:left; padding: 0.75rem; color: #a5b4fc;">response_mode=decision</th>
-                            <th style="text-align:left; padding: 0.75rem; color: #a5b4fc;">RPT (Full Token)</th>
+                            <th style="text-align:left; padding: 0.75rem; color: #a5b4fc;">Scenario</th>
+                            <th style="text-align:left; padding: 0.75rem; color: #a5b4fc;">Strategy</th>
+                            <th style="text-align:left; padding: 0.75rem; color: #a5b4fc;">Why</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr style="border-bottom: 1px solid #1e293b;">
-                            <td style="padding: 0.75rem;">Response</td>
-                            <td style="padding: 0.75rem;"><code>{"result":true}</code> or 403</td>
-                            <td style="padding: 0.75rem;">Full JWT with permissions list</td>
+                            <td style="padding: 0.75rem;">App with &lt; 50 resources</td>
+                            <td style="padding: 0.75rem;"><strong>All at once</strong> ✅</td>
+                            <td style="padding: 0.75rem;">Simple, small token, fast</td>
                         </tr>
                         <tr style="border-bottom: 1px solid #1e293b;">
-                            <td style="padding: 0.75rem;">PDP call per request?</td>
-                            <td style="padding: 0.75rem;">✅ Yes — every access check</td>
-                            <td style="padding: 0.75rem;">❌ No — validate JWT locally</td>
+                            <td style="padding: 0.75rem;">App with 1,000+ resources</td>
+                            <td style="padding: 0.75rem;"><strong>Per-resource</strong></td>
+                            <td style="padding: 0.75rem;">Token size limits, evaluation cost</td>
                         </tr>
                         <tr style="border-bottom: 1px solid #1e293b;">
-                            <td style="padding: 0.75rem;">Real-time accuracy</td>
-                            <td style="padding: 0.75rem;">Always current</td>
-                            <td style="padding: 0.75rem;">Frozen until token expires</td>
+                            <td style="padding: 0.75rem;">Same context for all resources</td>
+                            <td style="padding: 0.75rem;"><strong>All at once</strong> ✅</td>
+                            <td style="padding: 0.75rem;">No reason to split</td>
                         </tr>
                         <tr style="border-bottom: 1px solid #1e293b;">
-                            <td style="padding: 0.75rem;">Latency</td>
-                            <td style="padding: 0.75rem;">Higher (network round-trip each time)</td>
-                            <td style="padding: 0.75rem;">Lower (local JWT validation)</td>
+                            <td style="padding: 0.75rem;">Different context per resource</td>
+                            <td style="padding: 0.75rem;"><strong>Per-resource</strong></td>
+                            <td style="padding: 0.75rem;">Different <code>claim_token</code> needed</td>
                         </tr>
                         <tr style="border-bottom: 1px solid #1e293b;">
-                            <td style="padding: 0.75rem;">Token size</td>
-                            <td style="padding: 0.75rem;">Small (original access token)</td>
-                            <td style="padding: 0.75rem;">Larger (grows with permissions)</td>
+                            <td style="padding: 0.75rem;">Dashboard → user picks one item</td>
+                            <td style="padding: 0.75rem;"><strong>Hybrid upgrade</strong></td>
+                            <td style="padding: 0.75rem;">Fast login, grow token on demand</td>
                         </tr>
                         <tr style="border-bottom: 1px solid #1e293b;">
-                            <td style="padding: 0.75rem;">Keycloak dependency</td>
-                            <td style="padding: 0.75rem;">Critical path (every request)</td>
-                            <td style="padding: 0.75rem;">Only at login + RPT issuance</td>
+                            <td style="padding: 0.75rem;">Mobile app / limited bandwidth</td>
+                            <td style="padding: 0.75rem;"><strong>All at once</strong> ✅</td>
+                            <td style="padding: 0.75rem;">Fewer HTTP round-trips</td>
                         </tr>
                         <tr>
-                            <td style="padding: 0.75rem;">Best for</td>
-                            <td style="padding: 0.75rem;">High-security, always-fresh checks</td>
-                            <td style="padding: 0.75rem;">Performance-sensitive APIs, microservices</td>
+                            <td style="padding: 0.75rem;">High-security / zero-trust</td>
+                            <td style="padding: 0.75rem;"><strong>Per-resource</strong></td>
+                            <td style="padding: 0.75rem;">Minimal exposure if token leaks</td>
                         </tr>
                     </tbody>
                 </table>
 
-                <div class="highlight-box tip">
-                    <strong>Recommendation:</strong> Use <strong>RPT mode</strong> for production APIs where latency matters and permissions don't change within a token's lifetime (typically 5–15 minutes). Use <strong>decision mode</strong> when you need absolute real-time accuracy or are checking a single resource ad-hoc. You can even use <strong>both</strong> — RPT for general access, with a decision-mode fallback for critical operations.
+                <div class="highlight-box warning">
+                    <strong>Bottom Line:</strong> For most applications, <strong>request all resources at once</strong>. The per-resource and hybrid approaches exist for edge cases involving scale, security, or varying context. Your two-step flow remains: <strong>1 authentication call + 1 RPT call = done</strong>.
                 </div>
             </section>
         </main>
@@ -918,46 +937,8 @@ curl -s -H "Authorization: Bearer ${EXISTING_RPT}" \
 
     <!-- Load Mermaid JS for static diagram rendering -->
     <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-    <script>
-        mermaid.initialize({
-            startOnLoad: true,
-            theme: 'dark',
-            securityLevel: 'loose',
-            themeVariables: {
-                background: '#090d16',
-                primaryColor: '#6366f1',
-                primaryTextColor: '#fff',
-                lineColor: '#374151',
-                secondaryColor: '#1e293b'
-            }
-        });
-    </script>
-
-    <!-- Load Custom Simulator JS -->
+    <script src="./simulator-template.js"></script>
     <script src="./simulator.js"></script>
-
-    <!-- Sidebar Active Nav Handler -->
-    <script>
-        const sections = document.querySelectorAll('section');
-        const navLinks = document.querySelectorAll('.nav-link');
-
-        window.addEventListener('scroll', () => {
-            let current = '';
-            sections.forEach(section => {
-                const sectionTop = section.offsetTop;
-                const sectionHeight = section.clientHeight;
-                if (pageYOffset >= (sectionTop - 120)) {
-                    current = section.getAttribute('id');
-                }
-            });
-
-            navLinks.forEach(link => {
-                link.classList.remove('active');
-                if (link.getAttribute('href').slice(1) === current) {
-                    link.classList.add('active');
-                }
-            });
-        });
-    </script>
+    <script src="./page-bootstrap.js"></script>
 </body>
 </html>

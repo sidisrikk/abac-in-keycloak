@@ -2,7 +2,20 @@
  * Keycloak ABAC Interactive Simulator - Core Logic
  */
 
-document.addEventListener('DOMContentLoaded', () => {
+window.initAbacSimulator = (() => {
+    let initialized = false;
+
+    return function initAbacSimulator() {
+        if (initialized || !document.getElementById('simulator-root')) {
+            return;
+        }
+
+        if (!document.getElementById('sub-role')) {
+            return;
+        }
+
+        initialized = true;
+
     // Simulator State
     const state = {
         subject: {
@@ -94,7 +107,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Manual trigger button
         document.getElementById('btn-evaluate').addEventListener('click', () => {
-            runAnimationSequence();
+            evaluateAccess();
         });
     }
 
@@ -311,4 +324,6 @@ document.addEventListener('DOMContentLoaded', () => {
             node.classList.remove('highlight');
         }, 500);
     }
-});
+
+    };
+})();
