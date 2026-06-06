@@ -34,6 +34,42 @@ function getSingleValue(attr) {
     return attr.toString();
 }
 
+function normalizeText(val) {
+    if (val === null || val === undefined) return null;
+    return val.toString().trim().toLowerCase();
+}
+
+function safeToString(value) {
+    if (value === null || value === undefined) return "None";
+    try {
+        return value.toString();
+    } catch (e) {
+        return "[unprintable]";
+    }
+}
+
+function listAttributeKeys(attrs) {
+    if (!attrs) return "[none]";
+
+    try {
+        if (typeof attrs.keySet === 'function') {
+            return attrs.keySet().toString();
+        }
+    } catch (e) {}
+
+    try {
+        if (typeof attrs.getAttributes === 'function') {
+            return attrs.getAttributes().keySet().toString();
+        }
+    } catch (e) {}
+
+    try {
+        return Object.keys(attrs).join(', ');
+    } catch (e) {
+        return "[unknown]";
+    }
+}
+
 // 1. Get the evaluation context and resource info
 var context = $evaluation.getContext();
 var identity = context.getIdentity();
@@ -62,17 +98,22 @@ function parseLevel(valStr, defaultVal) {
 
 var uLevel = parseLevel(userClearanceStr, 0);
 var rLevel = parseLevel(resourceClassStr, 1);
+var normalizedUserDept = normalizeText(userDept);
+var normalizedResourceDept = normalizeText(resourceDept);
+var normalizedNetworkType = normalizeText(networkType);
 
 // Debug logging (will show up in Keycloak server console logs)
 print("Evaluating ABAC Policy for User: " + identity.getId());
-print("User Dept: " + (userDept ? userDept : "None") + ", Clearance: " + uLevel);
-print("Resource Dept: " + (resourceDept ? resourceDept : "None") + ", Classification: " + rLevel);
-print("Network Location Parameter: " + (networkType ? networkType : "None"));
+print("User Attribute Keys: " + listAttributeKeys(userAttributes));
+print("Context Attribute Keys: " + listAttributeKeys(contextAttributes));
+print("User Dept: " + safeToString(userDept) + " (normalized: " + safeToString(normalizedUserDept) + "), Clearance: " + uLevel);
+print("Resource Dept: " + safeToString(resourceDept) + " (normalized: " + safeToString(normalizedResourceDept) + "), Classification: " + rLevel);
+print("Network Location Parameter: " + safeToString(networkType) + " (normalized: " + safeToString(normalizedNetworkType) + ")");
 
 // 5. Evaluate Rules
 var departmentMatches = false;
-if (userDept && resourceDept) {
-    departmentMatches = (userDept === resourceDept);
+if (normalizedUserDept && normalizedResourceDept) {
+    departmentMatches = (normalizedUserDept === normalizedResourceDept);
 }
 
 var clearanceIsSufficient = (uLevel >= rLevel);
@@ -80,9 +121,9 @@ var clearanceIsSufficient = (uLevel >= rLevel);
 var environmentConstraintMet = true;
 // Rule: If resource is Level 3 (highly confidential), force office network
 if (rLevel >= 3) {
-    if (networkType !== "office") {
+    if (normalizedNetworkType !== "office") {
         environmentConstraintMet = false;
-        print("Access denied: Level 3 resource requires Office Network, current network is: " + (networkType ? networkType : "None"));
+        print("Access denied: Level 3 resource requires Office Network, current network is: " + safeToString(networkType));
     }
 }
 
