@@ -4,9 +4,9 @@ Welcome to the comprehensive, interactive guidebook on Attribute-Based Access Co
 
 ## 🚀 Repository Structure
 
-*   **`frontend/`**: Contains the interactive HTML/JS guidebook and a live ABAC simulator. Open `frontend/index.html` in your browser to start learning.
-*   **`lab-code/`**: Contains the Docker setup (`docker-compose.yml`) to run Keycloak with Postgres locally, alongside sample JavaScript-based policies for ABAC.
-*   **`scripts/`**: Bash scripts demonstrating how to interact with Keycloak APIs to fetch tokens and request access based on attributes (e.g., Requesting Party Token - RPT).
+- **`frontend/`**: Contains the interactive HTML/JS guidebook and a live ABAC simulator. Open `frontend/index.html` in your browser to start learning.
+- **`lab-code/`**: Contains the Docker setup (`docker-compose.yml`) to run Keycloak with Postgres locally, alongside sample JavaScript-based policies for ABAC.
+- **`scripts/`**: Bash scripts demonstrating how to interact with Keycloak APIs to fetch tokens and request access based on attributes (e.g., Requesting Party Token - RPT).
 
 ## 💡 Top 5 Important Topics Covered
 
@@ -21,12 +21,9 @@ When reviewing this repository, focus on these five core areas to master ABAC in
 ## 🛠️ Getting Started
 
 1.  **Read the Guide**: Open `frontend/index.html` in any web browser.
-2.  **Run the Lab**: 
+2.  **Run the Lab**:
     ```bash
     cd lab-code
     docker-compose up -d
     ```
 3.  **Test the APIs**: Use the scripts located in the `scripts/` folder to authenticate and request access dynamically.
-
----
-*Created for team knowledge sharing and deep diving into Keycloak Identity and Access Management.*
