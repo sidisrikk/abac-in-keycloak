@@ -443,7 +443,7 @@ services:
                         </ul>
                     </li>
                     <li>Click <strong>Save</strong>. You will now see an <strong>Authorization</strong> tab on the client details page.</li>
-                    <li>Go to the <strong>Credentials</strong> tab on the client details page and copy the value of the <strong>Client secret</strong>. You will need this client secret for the API requests in Step 8.</li>
+                    <li>Go to the <strong>Credentials</strong> tab on the client details page and copy the value of the <strong>Client secret</strong>. You will need this client secret for the API requests in Step 9.</li>
                 </ol>
 
                 <h3>Step 3: Configure User Profile Schema for Custom Attributes</h3>
@@ -481,7 +481,38 @@ services:
                     </li>
                 </ol>
 
-                <h3>Step 4: Setup User Attributes and Profile</h3>
+                <h3>Step 4: Map User Attributes into a Client Scope</h3>
+                <p>Defining custom user attributes is not enough on its own. To make those values available to tokens and authorization evaluations, add them as user attribute protocol mappers in a client scope, then assign that scope to the client.</p>
+                <ol>
+                    <li>In the left sidebar, navigate to <strong>Client scopes</strong> and click <strong>Create client scope</strong>.</li>
+                    <li>Create a scope named <code>abac-attributes</code> and save it.</li>
+                    <li>Open the new <code>abac-attributes</code> scope and go to <strong>Mappers</strong>.</li>
+                    <li>Create a mapper for <code>department</code>:
+                        <ul>
+                            <li><strong>Mapper type:</strong> <code>User Attribute</code></li>
+                            <li><strong>Name:</strong> <code>department</code></li>
+                            <li><strong>User Attribute:</strong> <code>department</code></li>
+                            <li><strong>Token Claim Name:</strong> <code>department</code></li>
+                            <li><strong>Claim JSON Type:</strong> <code>String</code></li>
+                            <li>Enable <strong>Add to access token</strong>.</li>
+                        </ul>
+                    </li>
+                    <li>Create another mapper for <code>clearance_level</code> using the same configuration pattern:
+                        <ul>
+                            <li><strong>Name:</strong> <code>clearance_level</code></li>
+                            <li><strong>User Attribute:</strong> <code>clearance_level</code></li>
+                            <li><strong>Token Claim Name:</strong> <code>clearance_level</code></li>
+                            <li><strong>Claim JSON Type:</strong> <code>String</code></li>
+                            <li>Enable <strong>Add to access token</strong>.</li>
+                        </ul>
+                    </li>
+                    <li>Go to <strong>Clients</strong> -> <code>document-service-api</code> -> <strong>Client scopes</strong> and assign <code>abac-attributes</code> as a <strong>Default</strong> client scope.
+                        <br>
+                        If you prefer to keep it optional, assign it as an optional scope and request it explicitly with <code>scope=openid profile abac-attributes</code> during login.
+                    </li>
+                </ol>
+
+                <h3>Step 5: Setup User Attributes and Profile</h3>
                 <p>Create two users to test access permissions. Due to Keycloak 26's default **User Profile** policies, basic fields must be fully completed to allow API logins without encountering "Account is not fully set up" errors.</p>
                 <ol>
                     <li>Create user: <strong>alice</strong>
@@ -528,7 +559,7 @@ services:
                     </li>
                 </ol>
 
-                <h3>Step 5: Define Authorization Resources & Attributes</h3>
+                <h3>Step 6: Define Authorization Resources & Attributes</h3>
                 <p>In Keycloak, we must define protected resources and map attributes to them.</p>
                 <ol>
                     <li>Go to Client: <code>document-service-api</code> -> <strong>Authorization</strong> -> <strong>Resources</strong>.</li>
@@ -544,7 +575,7 @@ services:
                     <li>Click <strong>Save</strong>.</li>
                 </ol>
 
-                <h3>Step 6: Register the Pre-Bundled JavaScript Policy</h3>
+                <h3>Step 7: Register the Pre-Bundled JavaScript Policy</h3>
                 <p>Because our custom policy has been packaged and registered in [keycloak-scripts.json](file:///home/wasuthep/Playground/keyclock_tuts/lab-code/META-INF/keycloak-scripts.json), Keycloak 26 makes it available in the console by default. You do not need to copy-paste code into the browser.</p>
                 <ol>
                     <li>Go to client's <strong>Authorization</strong> -> <strong>Policies</strong> -> <strong>Create Policy</strong>.</li>
@@ -553,7 +584,7 @@ services:
                     <li>Click <strong>Save</strong>.</li>
                 </ol>
 
-                <h3>Step 7: Create the Permission Binding</h3>
+                <h3>Step 8: Create the Permission Binding</h3>
                 <ol>
                     <li>Go to client's <strong>Authorization</strong> -> <strong>Permissions</strong> -> <strong>Create Permission</strong>.</li>
                     <li>Select <strong>Resource-based Permission</strong>.</li>
@@ -567,7 +598,7 @@ services:
                     <li>Click <strong>Save</strong>.</li>
                 </ol>
 
-                <h3>Step 8: Testing the Policy Execution</h3>
+                <h3>Step 9: Testing the Policy Execution</h3>
                 <p>You can verify access rights using the Keycloak Authorization Endpoint. Let's obtain an Access Token for users and request access approval.</p>
 
                 <h4>1. Authenticate Alice (Department: HR, Clearance: 3)</h4>
@@ -577,9 +608,11 @@ curl -d "client_id=document-service-api" \
      -d "username=alice" \
      -d "password=password" \
      -d "grant_type=password" \
+     -d "scope=openid profile abac-attributes" \
      -d "client_secret=&lt;YOUR_CLIENT_SECRET&gt;" \
      -X POST http://localhost:8080/realms/abac-realm/protocol/openid-connect/token</code></pre>
                 </div>
+                <p>If you assigned <code>abac-attributes</code> as a default client scope in Step 4, the explicit <code>scope</code> line is optional. Keep it if you want the request to be unambiguous.</p>
 
                 <h4>2. Query keycloak for Resource Authorization Decisions</h4>
                 <div class="code-container">

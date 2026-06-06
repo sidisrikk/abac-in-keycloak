@@ -7,22 +7,30 @@
  * 3. Level 3 (Confidential) resources can only be accessed from the "Office Network" (Environment constraint).
  */
 
-// Helper to convert attribute values from either Keycloak Entry objects or Java Lists/Maps to simple JS strings
+// Helper to convert attribute values from Keycloak attribute entries or Java collections to simple JS strings.
 function getSingleValue(attr) {
     if (!attr) return null;
-    // Check if it's an Entry object from identity/context attributes (has .asString)
+
+    // Keycloak attribute entries may expose either asString() or asString(index).
     if (typeof attr.asString === 'function') {
-        return attr.asString();
+        try {
+            return attr.asString();
+        } catch (e) {
+            return attr.asString(0);
+        }
     }
-    // Check if it's a Java List (from resource.getAttributes().get(...))
+
+    // Resource attributes are commonly java.util.List values.
     if (typeof attr.get === 'function' && typeof attr.isEmpty === 'function') {
         return attr.isEmpty() ? null : attr.get(0);
     }
-    // Check if it's a JS array
+
+    // Fallback for JS arrays.
     if (Array.isArray(attr) && attr.length > 0) {
         return attr[0];
     }
-    // Otherwise convert to string directly
+
+    // Final fallback for plain scalar-like objects.
     return attr.toString();
 }
 

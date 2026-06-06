@@ -1,13 +1,34 @@
 version: '3.8'
 
 services:
+  postgres:
+    image: postgres:16
+    container_name: keycloak_abac_db
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
   keycloak:
     build: .
     container_name: keycloak_abac_lab
     environment:
       - KEYCLOAK_ADMIN=admin
       - KEYCLOAK_ADMIN_PASSWORD=admin
+      - KC_DB=postgres
+      - KC_DB_URL=jdbc:postgresql://postgres:5432/keycloak
+      - KC_DB_USERNAME=keycloak
+      - KC_DB_PASSWORD=keycloak
       - KC_FEATURES=scripts
+      - KC_HTTP_ENABLED=true
+      - KC_HOSTNAME_STRICT=false
     ports:
       - "8080:8080"
-    command: start-dev
+    depends_on:
+      - postgres
+    command: start --auto-build
+
+volumes:
+  postgres_data:
