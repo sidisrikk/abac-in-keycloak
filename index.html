@@ -637,15 +637,20 @@ curl -d "client_id=document-service-api" \
                 <h4>2. Query keycloak for Resource Authorization Decisions</h4>
                 <div class="code-container">
                     <pre><code># Alice requests access to "Secret HR Report" (Clearance 3 required, Dept HR required)
+# Push runtime environment claims through claim_token. Raw form fields like
+# network_location=office are not exposed to JavaScript policies.
+CLAIM_TOKEN=$(printf '%s' '{"network_location":["office"]}' | base64 -w0)
+
 curl -H "Authorization: Bearer &lt;ALICE_ACCESS_TOKEN&gt;" \
      -d "grant_type=urn:ietf:params:oauth:grant-type:uma-ticket" \
      -d "audience=document-service-api" \
      -d "response_mode=decision" \
      -d "permission=Secret HR Report" \
-     -d "network_location=office" \
+     -d "claim_token=${CLAIM_TOKEN}" \
+     -d "claim_token_format=urn:ietf:params:oauth:token-type:jwt" \
      -X POST http://localhost:8080/realms/abac-realm/protocol/openid-connect/token</code></pre>
                 </div>
-                <p>If Keycloak exposes the mapped user claims and the runtime environment attribute correctly, Alice should receive <code>{"result":true}</code>. If access is denied, inspect the Keycloak container logs because the bundled policy now prints the user attribute keys, context attribute keys, and normalized values it actually evaluated.</p>
+                <p>If Keycloak exposes the mapped user claims and the pushed runtime claim correctly, Alice should receive <code>{"result":true}</code>. If access is denied, inspect the Keycloak container logs because the bundled policy now prints the user attribute keys, context attribute keys, and normalized values it actually evaluated.</p>
 
                 <h4>3. Repeat with Bob (Department: Eng, Clearance: 1)</h4>
                 <p>When Bob requests access to the Secret HR Report, Keycloak's PDP should return <code>403 Forbidden</code> because his department does not match and his clearance is insufficient.</p>
