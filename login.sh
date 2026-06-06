@@ -1,6 +1,6 @@
-USERNAME="username"
+USERNAME="alice"
 PASSWORD="password"
-CLIENT_SECRET="client_secret"
+CLIENT_SECRET="bilrI1HXFS3vDXJxEpE5vGwJYu4gOcD7"
 
 # Get Access Token
 curl -d "client_id=document-service-api" \
