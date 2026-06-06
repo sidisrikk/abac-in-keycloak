@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Attribute-Based Access Control (ABAC) in Keycloak: Comprehensive Guidebook</title>
     <meta name="description" content="A detailed, interactive guidebook on Attribute-Based Access Control (ABAC) in Keycloak, featuring architecture, implementation strategies, an interactive policy simulator, and a hands-on lab.">
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
     <div class="app-container">
@@ -377,7 +377,7 @@ if (userDept === resourceDept) {
 
                 <h3>Step 1: Build and Start Keycloak 26 with Pre-Bundled Scripts</h3>
                 <p>In Keycloak 26, the legacy <code>upload-scripts</code> feature is completely removed for security. JavaScript authorization policies must now be pre-packaged inside a custom provider JAR file and deployed to Keycloak's <code>/opt/keycloak/providers/</code> directory, while explicitly enabling the <code>scripts</code> feature flag.</p>
-                <p>To automate this seamlessly without installing zip utilities locally, we use a multi-stage Docker build. Review the [Dockerfile](file:///home/wasuthep/Playground/keyclock_tuts/lab-code/Dockerfile) and [docker-compose.yml](file:///home/wasuthep/Playground/keyclock_tuts/lab-code/docker-compose.yml) provided in the lab directory:</p>
+                <p>The lab now uses a multi-stage Docker build to package the JavaScript policy into a provider JAR, and a Compose stack with PostgreSQL for persistent realm data. Review the <code>lab-code/Dockerfile</code> and <code>lab-code/docker-compose.yml</code> files provided in the lab directory:</p>
 
                 <div class="code-container">
                     <div class="code-header">
@@ -402,28 +402,48 @@ RUN /opt/keycloak/bin/kc.sh build</code></pre>
                         <span class="code-title">lab-code/docker-compose.yml</span>
                         <button class="btn-copy" onclick="navigator.clipboard.writeText(document.getElementById('compose-code').textContent); this.textContent='Copied!'; setTimeout(() => this.textContent='Copy', 1500)">Copy</button>
                     </div>
-                    <pre><code id="compose-code">version: '3.8'
+                    <pre><code id="compose-code">services:
+  postgres:
+    image: postgres:16
+    container_name: keycloak_abac_db
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
 
-services:
   keycloak:
     build: .
     container_name: keycloak_abac_lab
     environment:
       - KEYCLOAK_ADMIN=admin
       - KEYCLOAK_ADMIN_PASSWORD=admin
+      - KC_DB=postgres
+      - KC_DB_URL=jdbc:postgresql://postgres:5432/keycloak
+      - KC_DB_USERNAME=keycloak
+      - KC_DB_PASSWORD=keycloak
       - KC_FEATURES=scripts
+      - KC_HTTP_ENABLED=true
+      - KC_HOSTNAME_STRICT=false
     ports:
       - "8080:8080"
-    command: start-dev</code></pre>
+    depends_on:
+      - postgres
+    command: start
+
+volumes:
+  postgres_data:</code></pre>
                 </div>
 
-                <p>Compile the image and start the container by running this in your terminal:</p>
+                <p>From the <code>lab-code/</code> directory, build the custom image and start the stack:</p>
                 <div class="code-container">
-                    <pre><code>docker compose up --build -d</code></pre>
+                    <pre><code>cd lab-code
+docker compose up --build -d</code></pre>
                 </div>
 
                 <div class="highlight-box warning">
-                    <strong>Warning on In-Memory Storage:</strong> Keycloak runs on an in-memory H2 database by default. If you stop the service using <code>docker compose down</code>, your realm, user attributes, and policy mappings will be deleted. To pause the container without losing your progress, run <code>docker compose stop</code> instead. If you have run <code>down</code>, you will need to re-create the realm, client, users, and resources in the Keycloak Admin Console.
+                    <strong>Persistence Note:</strong> This Compose stack uses PostgreSQL with a named Docker volume, so your realm, users, and authorization configuration survive container restarts. If you run <code>docker compose down -v</code>, the <code>postgres_data</code> volume is removed and you will need to re-create the realm, client, users, resources, and policies.
                 </div>
 
                 <h3>Step 2: Access the Admin Console and Configure Client</h3>
@@ -576,7 +596,7 @@ services:
                 </ol>
 
                 <h3>Step 7: Register the Pre-Bundled JavaScript Policy</h3>
-                <p>Because our custom policy has been packaged and registered in [keycloak-scripts.json](file:///home/wasuthep/Playground/keyclock_tuts/lab-code/META-INF/keycloak-scripts.json), Keycloak 26 makes it available in the console by default. You do not need to copy-paste code into the browser.</p>
+                <p>Because our custom policy has been packaged and registered in <code>lab-code/META-INF/keycloak-scripts.json</code>, Keycloak 26 makes it available in the console by default. You do not need to copy-paste code into the browser.</p>
                 <ol>
                     <li>Go to client's <strong>Authorization</strong> -> <strong>Policies</strong> -> <strong>Create Policy</strong>.</li>
                     <li>Look for our pre-registered policy under the dropdown list. Select **Verify Dept and Clearance ABAC Policy** (the name matches the registry entry).</li>
@@ -599,7 +619,7 @@ services:
                 </ol>
 
                 <h3>Step 9: Testing the Policy Execution</h3>
-                <p>You can verify access rights using the Keycloak Authorization Endpoint. Let's obtain an Access Token for users and request access approval.</p>
+                <p>You can verify access rights using the Keycloak Authorization Endpoint. First obtain an access token that carries the mapped user attributes, then request an authorization decision for the protected resource.</p>
 
                 <h4>1. Authenticate Alice (Department: HR, Clearance: 3)</h4>
                 <div class="code-container">
@@ -612,7 +632,7 @@ curl -d "client_id=document-service-api" \
      -d "client_secret=&lt;YOUR_CLIENT_SECRET&gt;" \
      -X POST http://localhost:8080/realms/abac-realm/protocol/openid-connect/token</code></pre>
                 </div>
-                <p>If you assigned <code>abac-attributes</code> as a default client scope in Step 4, the explicit <code>scope</code> line is optional. Keep it if you want the request to be unambiguous.</p>
+                <p>If you assigned <code>abac-attributes</code> as a default client scope in Step 4, the explicit <code>scope</code> line is optional. Keep it if you want the request to be unambiguous. Before moving on, decode the token and confirm it includes <code>department</code> and <code>clearance_level</code>.</p>
 
                 <h4>2. Query keycloak for Resource Authorization Decisions</h4>
                 <div class="code-container">
@@ -625,10 +645,11 @@ curl -H "Authorization: Bearer &lt;ALICE_ACCESS_TOKEN&gt;" \
      -d "network_location=office" \
      -X POST http://localhost:8080/realms/abac-realm/protocol/openid-connect/token</code></pre>
                 </div>
-                <p>Response for Alice will be <code>{"result":true}</code> (Access Approved).</p>
+                <p>If Keycloak exposes the mapped user claims and the runtime environment attribute correctly, Alice should receive <code>{"result":true}</code>. If access is denied, inspect the Keycloak container logs because the bundled policy now prints the user attribute keys, context attribute keys, and normalized values it actually evaluated.</p>
 
                 <h4>3. Repeat with Bob (Department: Eng, Clearance: 1)</h4>
-                <p>When Bob requests access to the Secret HR Report, Keycloak's PDP evaluates the JS policy and returns a <code>403 Forbidden</code> (Access Denied) due to both a department mismatch and insufficient clearance levels.</p>
+                <p>When Bob requests access to the Secret HR Report, Keycloak's PDP should return <code>403 Forbidden</code> because his department does not match and his clearance is insufficient.</p>
+                <p>If you need to troubleshoot the evaluation, inspect the server logs with <code>docker compose logs -f keycloak</code> from the <code>lab-code/</code> directory. The bundled policy logs lines such as <code>User Attribute Keys</code>, <code>Context Attribute Keys</code>, and the normalized department/network values to show what Keycloak actually made available during authorization.</p>
             </section>
         </main>
     </div>
@@ -651,7 +672,7 @@ curl -H "Authorization: Bearer &lt;ALICE_ACCESS_TOKEN&gt;" \
     </script>
 
     <!-- Load Custom Simulator JS -->
-    <script src="simulator.js"></script>
+    <script src="./simulator.js"></script>
 
     <!-- Sidebar Active Nav Handler -->
     <script>
